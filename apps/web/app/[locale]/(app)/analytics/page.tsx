@@ -24,13 +24,9 @@ export default async function AnalyticsPage({
   const t = await getTranslations("analytics");
   const tc = await getTranslations("common");
 
-  const { money, byPayer, byBranch, pareto, trend } = await getAnalytics(
-    session.tenantId,
-  );
-
-  const totalClaims = byPayer.reduce((a, r) => a + r.claims, 0);
-  const totalDenied = byPayer.reduce((a, r) => a + r.denied, 0);
-  const rate = totalClaims > 0 ? totalDenied / totalClaims : 0;
+  const { money, overallRate, byPayer, byBranch, pareto, trend } =
+    await getAnalytics(session.tenantId);
+  const rate = overallRate;
 
   return (
     <div>

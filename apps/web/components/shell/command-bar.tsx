@@ -31,7 +31,7 @@ export function CommandBar({
 }) {
   const t = useTranslations("common");
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-hairline bg-surface-1/95 px-4 backdrop-blur">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-hairline bg-surface-1 px-4 backdrop-blur">
       <TenantSwitcher tenantName={tenantName} branches={branches} />
 
       <div className="relative hidden min-w-0 flex-1 md:block">

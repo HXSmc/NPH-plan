@@ -22,7 +22,9 @@ export function RankedBars({
   tone?: "atRisk" | "neutral";
 }) {
   const max = Math.max(1, ...items.map((i) => Number(i.atRiskSar)));
-  const barColor = tone === "atRisk" ? "bg-at-risk/70" : "bg-money-neutral/60";
+  // Solid token colors: the `/opacity` modifier does not resolve on our
+  // var()-based color tokens (renders transparent).
+  const barColor = tone === "atRisk" ? "bg-at-risk" : "bg-money-neutral";
   const figColor = tone === "atRisk" ? "text-at-risk-text" : "text-text";
 
   return (

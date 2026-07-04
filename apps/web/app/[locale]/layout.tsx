@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
-import { setRequestLocale } from "next-intl/server";
+import { getMessages, setRequestLocale } from "next-intl/server";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { routing } from "@/i18n/routing";
@@ -31,6 +31,9 @@ export default async function LocaleLayout({
   const { locale } = await params;
   if (!(routing.locales as readonly string[]).includes(locale)) notFound();
   setRequestLocale(locale);
+  // Pass messages to the client provider so client components (rail, money
+  // indicator, switchers) resolve translations, not raw keys.
+  const messages = await getMessages();
 
   const dir = locale === "ar" ? "rtl" : "ltr";
 
@@ -45,7 +48,7 @@ export default async function LocaleLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>
       <body className="min-h-screen bg-bg text-text antialiased">
-        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <NextIntlClientProvider messages={messages}>{children}</NextIntlClientProvider>
       </body>
     </html>
   );

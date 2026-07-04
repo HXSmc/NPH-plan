@@ -27,14 +27,12 @@ export function AccountMenu({ email, tenant }: { email: string; tenant: string }
           <div className="truncate text-muted">{tenant}</div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <form action={signOutAction}>
-          <DropdownMenuItem asChild>
-            <button type="submit" className="w-full text-start">
-              <LogOut className="size-4" />
-              {t("signOut")}
-            </button>
-          </DropdownMenuItem>
-        </form>
+        {/* Call the server action from onSelect — a nested <form> submit is
+            swallowed by Radix's menu-item click handling. */}
+        <DropdownMenuItem onSelect={() => void signOutAction()}>
+          <LogOut className="size-4" />
+          {t("signOut")}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

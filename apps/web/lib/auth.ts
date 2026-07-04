@@ -8,16 +8,26 @@ import { findUserByEmail } from "./db";
  * The tenant_id and role are read from the identity store at sign-in and carried
  * in the JWT; the app never trusts a client-supplied tenant/role.
  *
+ * SECURITY: this provider is PASSWORDLESS (dev/synthetic only). It is disabled in
+ * production unless TAWEED_ENABLE_DEV_AUTH=1 is explicitly set, so a passwordless
+ * sign-in can never ship as a live auth path.
  * TODO(ksa-oidc)/DEPLOY: swap Credentials for a KSA-resident managed OIDC
  * provider. The provider is the only thing that changes — callbacks, the session
  * shape, and every withSession call stay identical (typed swap).
  */
+const IS_PROD = process.env.NODE_ENV === "production";
+export const DEV_AUTH_ENABLED = !IS_PROD || process.env.TAWEED_ENABLE_DEV_AUTH === "1";
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  secret: process.env.AUTH_SECRET ?? "dev-insecure-secret-change-me", // TODO(ksa-oidc): secrets manager
+  // Require a real AUTH_SECRET in production; only fall back in dev. If unset in
+  // prod, NextAuth fails closed (cannot sign/verify) rather than trusting a
+  // public repo string.
+  secret: process.env.AUTH_SECRET ?? (IS_PROD ? undefined : "dev-insecure-secret-change-me"),
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
-  providers: [
+  providers: DEV_AUTH_ENABLED
+    ? [
     Credentials({
       id: "dev",
       name: "Dev account",
@@ -38,7 +48,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         };
       },
     }),
-  ],
+      ]
+    : [],
   callbacks: {
     jwt({ token, user }) {
       if (user) {

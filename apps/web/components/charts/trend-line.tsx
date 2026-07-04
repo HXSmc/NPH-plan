@@ -11,6 +11,10 @@ import {
 import type { TrendPoint } from "@taweed/analytics";
 import { formatMoney } from "@/lib/money";
 
+// Hex literals: Recharts fill/stroke are SVG attributes (CSS var() won't resolve).
+// Money hues are theme-invariant in our tokens.
+const C = { atRisk: "#c2410c", recovered: "#0e9f6e", axis: "#8a8a93", hairline: "#8a8a9366" };
+
 // Trend over time (design-brief §6): at-risk area (rust) + recovered line
 // (emerald). In RTL time still flows inline-start→end, but labels stay LTR.
 export function TrendLine({ points }: { points: TrendPoint[] }) {
@@ -26,15 +30,15 @@ export function TrendLine({ points }: { points: TrendPoint[] }) {
         <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
           <defs>
             <linearGradient id="atRiskFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--at-risk)" stopOpacity={0.28} />
-              <stop offset="100%" stopColor="var(--at-risk)" stopOpacity={0.02} />
+              <stop offset="0%" stopColor={C.atRisk} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={C.atRisk} stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="period"
-            tick={{ fontSize: 11, fill: "var(--text-faint)" }}
+            tick={{ fontSize: 11, fill: C.axis }}
             tickLine={false}
-            axisLine={{ stroke: "var(--hairline)" }}
+            axisLine={{ stroke: C.hairline }}
           />
           <YAxis hide />
           <Tooltip
@@ -50,14 +54,14 @@ export function TrendLine({ points }: { points: TrendPoint[] }) {
           <Area
             type="monotone"
             dataKey="denied"
-            stroke="var(--at-risk)"
+            stroke={C.atRisk}
             strokeWidth={2}
             fill="url(#atRiskFill)"
           />
           <Line
             type="monotone"
             dataKey="recovered"
-            stroke="var(--recovered)"
+            stroke={C.recovered}
             strokeWidth={2}
             dot={false}
           />

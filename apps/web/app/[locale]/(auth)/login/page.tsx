@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { listDemoAccounts } from "@/lib/db";
 import { getSession } from "@/lib/session";
+import { DEV_AUTH_ENABLED } from "@/lib/auth";
 import { signInWithEmail } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +25,9 @@ export default async function LoginPage({
 
   const t = await getTranslations("auth");
   const tr = await getTranslations("roles");
-  const accounts = await listDemoAccounts();
+  // Only enumerate demo accounts when dev auth is enabled — never leak the tenant
+  // roster on a production login page.
+  const accounts = DEV_AUTH_ENABLED ? await listDemoAccounts() : [];
 
   return (
     <main className="grid min-h-screen place-items-center bg-bg p-6">

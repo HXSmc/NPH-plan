@@ -41,7 +41,7 @@ export default async function ScrubberPage({
       ) : (
         <>
           {/* Prevention in the same money units as recovery (design-brief §8.3). */}
-          <div className="mb-5 flex items-center gap-3 rounded-lg border border-hairline bg-at-risk-bg/40 p-4">
+          <div className="mb-5 flex items-center gap-3 rounded-lg border border-hairline bg-at-risk-bg p-4">
             <ShieldAlert className="size-5 shrink-0 text-at-risk" />
             <p className="text-body">
               {t("protects", {

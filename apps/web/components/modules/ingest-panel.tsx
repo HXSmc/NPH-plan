@@ -34,7 +34,7 @@ export function IngestPanel() {
       <Card
         className={cn(
           "flex min-h-[18rem] flex-col items-center justify-center gap-3 border-dashed p-8 text-center transition-colors",
-          dragging && "border-accent bg-accent-subtle/40",
+          dragging && "border-accent bg-accent-subtle",
         )}
         onDragOver={(e) => {
           e.preventDefault();

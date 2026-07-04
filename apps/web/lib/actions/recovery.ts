@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "@taweed/db";
 import { logAudit } from "@taweed/audit";
-import { getSession } from "@/lib/session";
+import { authorizeAction } from "@/lib/authz";
 import { withSession } from "@/lib/db";
 
 const Input = z.object({
@@ -23,7 +23,8 @@ export async function markAppealOutcome(
 ): Promise<{ ok: boolean }> {
   const parsed = Input.safeParse({ appealId, outcome });
   if (!parsed.success) return { ok: false };
-  const session = await getSession();
+  // RBAC: only owner/finance/rcm (full) may change recovery outcomes.
+  const session = await authorizeAction("recovery", ["full"]);
   if (!session) return { ok: false };
 
   await withSession(session.tenantId, async (db) => {
@@ -32,8 +33,11 @@ export async function markAppealOutcome(
       SELECT d.denied_amount FROM appeals a
         JOIN denials d ON d.id = a.denial_id
        WHERE a.id = ${appealId} LIMIT 1`);
-    const denied = Number(rows.rows[0]?.denied_amount ?? "0");
-    const recovered = outcome === "won" ? (denied * 0.85).toFixed(2) : null;
+    // Compute recovered in integer halalas (no float drift on the ledger cent).
+    const deniedHalalas = Math.round(Number(rows.rows[0]?.denied_amount ?? "0") * 100);
+    const recoveredHalalas = Math.round(deniedHalalas * 0.85); // 85% partial-pay
+    const recovered =
+      outcome === "won" ? (recoveredHalalas / 100).toFixed(2) : null;
 
     await db
       .update(schema.appeals)

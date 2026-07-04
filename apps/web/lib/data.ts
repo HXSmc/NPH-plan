@@ -2,11 +2,9 @@ import "server-only";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { schema, type Database } from "@taweed/db";
 import {
-  denialRateBy,
   moneyScope,
   reasonPareto,
   trend,
-  type DenialDimension,
   type DimRate,
   type MoneyScope,
   type ReasonRow,
@@ -24,9 +22,9 @@ import { withSession } from "./db";
 
 export interface AnalyticsBundle {
   money: MoneyScope;
+  overallRate: number;
   byPayer: DimRate[];
   byBranch: DimRate[];
-  byReason: DimRate[];
   pareto: ReasonRow[];
   trend: TrendPoint[];
 }
@@ -35,18 +33,61 @@ export function getMoneyScope(tenantId: string): Promise<MoneyScope> {
   return withSession(tenantId, (db) => moneyScope(db));
 }
 
+/**
+ * TRUE denial rate by claim dimension: denied claims / TOTAL claims (0..1), so
+ * the hero and ranked bars are a real rate <=100% — unlike @taweed/analytics
+ * denialRateBy which reports denials-per-affected-claim. Base is the claims table
+ * LEFT JOINed to denials so non-denied claims count in the denominator.
+ */
+async function denialRateDim(
+  db: Database,
+  dim: "payer" | "branch",
+): Promise<DimRate[]> {
+  const keyCol = dim === "payer" ? sql`c.payer_id` : sql`c.branch_id`;
+  const nameJoin =
+    dim === "payer"
+      ? sql`JOIN payers x ON x.id = c.payer_id`
+      : sql`JOIN branches x ON x.id = c.branch_id`;
+  const res = await db.execute<{
+    key: string;
+    label: string;
+    total_claims: number;
+    denied_claims: number;
+    at_risk_sar: string;
+  }>(sql`
+    SELECT ${keyCol} AS key, x.name AS label,
+           COUNT(DISTINCT c.id)::int AS total_claims,
+           COUNT(DISTINCT c.id) FILTER (WHERE d.id IS NOT NULL)::int AS denied_claims,
+           COALESCE(SUM(d.denied_amount), 0)::numeric(14,2)::text AS at_risk_sar
+      FROM claims c
+      ${nameJoin}
+      LEFT JOIN claim_lines cl ON cl.claim_id = c.id
+      LEFT JOIN denials d ON d.claim_line_id = cl.id
+     GROUP BY ${keyCol}, x.name
+     ORDER BY SUM(d.denied_amount) DESC NULLS LAST`);
+  return res.rows.map((r) => ({
+    key: r.key,
+    label: r.label,
+    claims: r.total_claims,
+    denied: r.denied_claims,
+    rate: r.total_claims > 0 ? r.denied_claims / r.total_claims : 0,
+    atRiskSar: r.at_risk_sar,
+  }));
+}
+
 export function getAnalytics(tenantId: string): Promise<AnalyticsBundle> {
   return withSession(tenantId, async (db) => {
-    const [money, byPayer, byBranch, byReason, pareto, trendPts] =
-      await Promise.all([
-        moneyScope(db),
-        denialRateBy(db, "payer" as DenialDimension),
-        denialRateBy(db, "branch" as DenialDimension),
-        denialRateBy(db, "reason" as DenialDimension),
-        reasonPareto(db),
-        trend(db),
-      ]);
-    return { money, byPayer, byBranch, byReason, pareto, trend: trendPts };
+    const [money, byPayer, byBranch, pareto, trendPts] = await Promise.all([
+      moneyScope(db),
+      denialRateDim(db, "payer"),
+      denialRateDim(db, "branch"),
+      reasonPareto(db),
+      trend(db),
+    ]);
+    const totalClaims = byPayer.reduce((a, r) => a + r.claims, 0);
+    const deniedClaims = byPayer.reduce((a, r) => a + r.denied, 0);
+    const overallRate = totalClaims > 0 ? deniedClaims / totalClaims : 0;
+    return { money, overallRate, byPayer, byBranch, pareto, trend: trendPts };
   });
 }
 
@@ -229,15 +270,23 @@ export function getRecovery(tenantId: string): Promise<RecoveryBundle> {
       daysOpen: Number(r.days_open),
     }));
 
-    const won = list.filter((r) => r.status === "won").length;
-    const lost = list.filter((r) => r.status === "lost").length;
+    // Win rate + median days over ALL appeals (not the display-limited/recovered-
+    // biased rows), so the ROI metrics are honest.
+    const agg = await db.execute<{ won: number; lost: number; median_days: number }>(sql`
+      SELECT
+        count(*) FILTER (WHERE status = 'won')::int  AS won,
+        count(*) FILTER (WHERE status = 'lost')::int AS lost,
+        COALESCE(percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(DAY FROM now() - generated_at)), 0)::int AS median_days
+      FROM appeals`);
+    const a = agg.rows[0];
+    const won = Number(a?.won ?? 0);
+    const lost = Number(a?.lost ?? 0);
     const winRate = won + lost > 0 ? won / (won + lost) : 0;
+    const medianDays = Number(a?.median_days ?? 0);
     const recovered = Number(money.recoveredSar);
     const sharePct = 0.12; // recovery-share model (design-brief §12); DEPLOY: per-contract
     const shareSar = (recovered * sharePct).toFixed(2);
-    // Median days-open across resolved appeals (simple, deterministic).
-    const days = list.map((r) => r.daysOpen).sort((a, b) => a - b);
-    const medianDays = days.length ? (days[Math.floor(days.length / 2)] ?? 0) : 0;
 
     return { money, winRate, medianDays, sharePct, shareSar, rows: list };
   });

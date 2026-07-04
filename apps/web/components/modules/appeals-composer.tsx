@@ -49,14 +49,27 @@ export function AppealsComposer({
     if (draft) setBody(next === "ar" ? draft.draft.body_ar : draft.draft.body_en);
   };
 
-  const doExport = () => {
+  // Escape EVERY interpolated value — the letter may be opened in a browser.
+  const esc = (s: string) =>
+    s.replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+    );
+
+  const doExport = async () => {
     if (!draft || !selected) return;
-    const subject = lang === "ar" ? draft.draft.subject_ar : draft.draft.subject_en;
+    const subject = esc(lang === "ar" ? draft.draft.subject_ar : draft.draft.subject_en);
     const dir = lang === "ar" ? "rtl" : "ltr";
     const checklist = draft.draft.docChecklist
-      .map((d) => `<li>${lang === "ar" ? d.label_ar : d.label_en}</li>`)
+      .map((d) => `<li>${esc(lang === "ar" ? d.label_ar : d.label_en)}</li>`)
       .join("");
-    const html = `<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><title>${subject}</title><style>body{font-family:system-ui;max-width:720px;margin:2rem auto;padding:0 1rem;line-height:1.6}h1{font-size:18px}pre{white-space:pre-wrap;font-family:inherit}footer{margin-top:2rem;border-top:1px solid #ccc;padding-top:1rem;color:#555;font-size:12px}</style></head><body><h1>${subject}</h1><pre>${body.replace(/</g, "&lt;")}</pre><h2>${lang === "ar" ? "المستندات الداعمة" : "Supporting documents"}</h2><ul>${checklist}</ul><footer>${tr("humanInLoop")} · ${tr("notDevice")} · ${name}, ${reviewerRole}</footer></body></html>`;
+    const docsTitle = lang === "ar" ? "المستندات الداعمة" : "Supporting documents";
+    const footer = `${esc(tr("humanInLoop"))} · ${esc(tr("notDevice"))} · ${esc(name)}, ${esc(reviewerRole)}`;
+    const html = `<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><title>${subject}</title><style>body{font-family:system-ui;max-width:720px;margin:2rem auto;padding:0 1rem;line-height:1.6}h1{font-size:18px}pre{white-space:pre-wrap;font-family:inherit}footer{margin-top:2rem;border-top:1px solid #ccc;padding-top:1rem;color:#555;font-size:12px}</style></head><body><h1>${subject}</h1><pre>${esc(body)}</pre><h2>${docsTitle}</h2><ul>${checklist}</ul><footer>${footer}</footer></body></html>`;
+    // Record the export (awaited) BEFORE handing over the PHI letter, so an
+    // export never completes without its compliance record.
+    await recordAppealExport(selected);
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -64,7 +77,6 @@ export function AppealsComposer({
     a.download = `appeal-${selected.slice(0, 8)}-${lang}.html`;
     a.click();
     URL.revokeObjectURL(url);
-    void recordAppealExport(selected);
   };
 
   const canExport = reviewed && name.trim().length > 0 && !!draft;
@@ -83,7 +95,7 @@ export function AppealsComposer({
                 onClick={() => select(d.denialId)}
                 className={cn(
                   "flex w-full flex-col gap-1 p-3 text-start transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                  selected === d.denialId && "bg-accent-subtle/50",
+                  selected === d.denialId && "bg-accent-subtle",
                 )}
               >
                 <div className="flex items-center justify-between">
@@ -112,9 +124,21 @@ export function AppealsComposer({
               <p className="mt-2 text-body text-muted">{t("lead")}</p>
             </div>
           </div>
-        ) : pending || !draft ? (
+        ) : pending ? (
           <div className="grid h-full min-h-[24rem] place-items-center">
             <Loader2 className="size-6 animate-spin text-muted" />
+          </div>
+        ) : !draft ? (
+          <div className="grid h-full min-h-[24rem] place-items-center text-center">
+            <div>
+              <p className="text-body text-muted">{t("emptyBody")}</p>
+              <button
+                onClick={() => select(selected)}
+                className="mt-2 text-body text-accent underline-offset-4 hover:underline"
+              >
+                {tc("review")}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -129,7 +153,7 @@ export function AppealsComposer({
                 </p>
               </div>
               <div className="text-end">
-                <span className="text-label text-muted">{t("appealed", { amount: "" })}</span>
+                <span className="text-label text-muted">{t("appealingCaption")}</span>
                 <p className="num text-h2 font-display font-medium text-at-risk-text">
                   SAR {formatMoney(draft.deniedSar)}
                 </p>
@@ -190,7 +214,7 @@ export function AppealsComposer({
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex flex-1 flex-col gap-1">
                   <span className="text-label text-muted">
-                    {t("reviewGate", { name: "", role: reviewerRole })}
+                    {t("reviewGate", { name: name.trim() || "…", role: reviewerRole })}
                   </span>
                   <Input
                     value={name}
@@ -208,7 +232,7 @@ export function AppealsComposer({
                   />
                   {t("confirmReview")}
                 </label>
-                <Button onClick={doExport} disabled={!canExport}>
+                <Button onClick={() => void doExport()} disabled={!canExport}>
                   <Download className="size-4" />
                   {tc("exportPdf")}
                 </Button>

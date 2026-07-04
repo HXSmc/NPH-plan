@@ -31,6 +31,7 @@ const ADMIN_URL =
 process.env.DATABASE_URL = ADMIN_URL; // migrate() reads this for its local-host guard
 
 const SCALE = Number(process.env.SEED_SCALE ?? "1");
+const CLEAN_PER_SEED = 14; // accepted claims added per seed to keep denial rate realistic
 
 interface Dim {
   id: string;
@@ -52,9 +53,14 @@ const PAYERS: { name: string; type: "insurer" | "tpa" }[] = [
   { name: "MedGulf", type: "insurer" },
 ];
 
+// Deterministic tenant ids so re-seeding keeps existing dev sessions valid
+// (a random id each run would orphan the session's tenant → RLS shows 0 rows).
+const TENANT_A_ID = "00000000-0000-4000-8000-000000000001";
+const TENANT_B_ID = "00000000-0000-4000-8000-000000000002";
+
 const TENANTS: TenantSpec[] = [
   {
-    id: newId(),
+    id: TENANT_A_ID,
     name: "Al Salama Dental Group",
     seeds: Math.round(40 * SCALE),
     branches: [
@@ -71,7 +77,7 @@ const TENANTS: TenantSpec[] = [
     payers: PAYERS,
   },
   {
-    id: newId(),
+    id: TENANT_B_ID,
     name: "Noor Polyclinic",
     seeds: Math.round(12 * SCALE),
     branches: [
@@ -160,6 +166,30 @@ function buildClaims(
       const normalized = normalize(pairs[0]!, ctx);
       // Guarantee nphies_claim_id uniqueness per tenant (idempotency index).
       normalized.claim.nphies_claim_id = `${scenario}-${seed}-${s}`;
+      // Spread submission dates across ~6 months so the trend chart has a curve.
+      normalized.claim.submitted_at = new Date(
+        Date.now() - (((i * 37) % 180) + 1) * 86_400_000,
+      ).toISOString();
+      out.push(normalized);
+      i++;
+    }
+    // Extra clean (accepted) claims so the denial RATE reads realistically
+    // (~30-40%) rather than being dominated by the denial-heavy scenario mix.
+    for (let k = 0; k < CLEAN_PER_SEED; k++) {
+      const { pairs, issues } = parseBundle(generateBundle("clean", seed * 1000 + k));
+      if (issues.length > 0 || pairs.length === 0) continue;
+      const ctx: NormalizeContext = {
+        tenantId: t.id,
+        branchId: dims.branches[i % dims.branches.length]!.id,
+        providerId: dims.providers[i % dims.providers.length]!.id,
+        payerId: dims.payers[(seed + k) % dims.payers.length]!.id,
+        patientId: dims.patients[i % dims.patients.length]!.id,
+      };
+      const normalized = normalize(pairs[0]!, ctx);
+      normalized.claim.nphies_claim_id = `clean-x-${seed}-${k}`;
+      normalized.claim.submitted_at = new Date(
+        Date.now() - (((i * 37) % 180) + 1) * 86_400_000,
+      ).toISOString();
       out.push(normalized);
       i++;
     }
@@ -213,7 +243,8 @@ function buildAppeals(tenantId: string, normalized: NormalizedClaim[]) {
       let submittedAt: Date | null = null;
       if (roll < 6) {
         status = "won";
-        recovered = (denied * 0.85).toFixed(2); // partial-pay realism
+        // Integer halalas: no float drift on the ledger cent.
+        recovered = (Math.round(Math.round(denied * 100) * 0.85) / 100).toFixed(2);
         submittedAt = now;
       } else if (roll < 8) {
         status = "lost";
@@ -222,6 +253,8 @@ function buildAppeals(tenantId: string, normalized: NormalizedClaim[]) {
         status = "submitted";
         submittedAt = now;
       }
+      // Spread generation dates over ~30 days so median-days-to-recovery is real.
+      const genAt = new Date(now.getTime() - ((n * 3) % 30) * 86_400_000);
       appeals.push({
         id: newId(),
         tenant_id: tenantId,
@@ -229,8 +262,8 @@ function buildAppeals(tenantId: string, normalized: NormalizedClaim[]) {
         template_id: null,
         status,
         recovered_amount: recovered,
-        generated_at: now,
-        submitted_at: submittedAt,
+        generated_at: genAt,
+        submitted_at: submittedAt ? genAt : null,
       });
     }
   }

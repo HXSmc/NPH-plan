@@ -15,3 +15,9 @@ apps/web/next-env.d.ts
 # env
 .env
 .env.local
+
+# local-only working docs (not product code)
+docs/handoff.md
+docs/NEXT_STEP_PROMPT.md
+docs/STEP_SUMMARY.md
+docs/screenshots/

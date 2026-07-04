@@ -156,6 +156,7 @@
     "confirmReview": "Confirm review to enable export",
     "notPayerSpecific": "Template not payer-specific",
     "appealed": "Appealing SAR {amount}",
+    "appealingCaption": "Appealing",
     "readyNudge": "{n} denials are appeal-ready. Drafts written. You review, you send.",
     "emptyTitle": "No appealable denials",
     "emptyBody": "Denials become appealable once ingested and categorized."
