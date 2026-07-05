@@ -13,9 +13,9 @@
 
 ## Counters (loop memory)
 
-- `iteration_counter` = 4
-- `change_iteration_counter` = 4 _(only iterations that changed product source count toward the cap of 12)_
-- `consecutive_clean_passes` = 0 _(need 2 to STOP DEPLOY-READY; reset — iteration 4 changed product source)_
+- `iteration_counter` = 5
+- `change_iteration_counter` = 5 _(only iterations that changed product source count toward the cap of 12)_
+- `consecutive_clean_passes` = 0 _(need 2 to STOP DEPLOY-READY; reset — iteration 5 changed product source)_
 - `last_clean_head_sha` = _(empty)_
 
 ## ✅ RESOLVED (iter4) — money-path semantics (escalated → human authorized via product docs → FIXED with TDD)
@@ -140,4 +140,13 @@ _(terse per-iteration status appended below each pass)_
 - **Pushed `ai-harden` to origin** (user-authorized) → CI ran. Run `28752722785`: quality ✓, integration ✓, **E2E 12→4 failures** — the login fix WORKED (4/6 projects green); remaining 4 were `getByText(/SAR/).first()` hidden on tablet-768 + mobile-320.
 - **E2E responsive fix**: the command-bar `MoneyIndicator` is `hidden lg:block` (hidden <1024), so the first-DOM SAR is hidden on small viewports while the hero `money-figure` stays visible → `money-arc.spec.ts` now targets `.filter({ visible: true }).first()`. Test-locator fix, not an app bug (money IS shown via the hero on every breakpoint). Note: whether the "persistent" indicator should also show on tablet/mobile is a minor design decision, not a functional money-loss.
 - **Money-path escalation RESOLVED** (see the ✅ block up top): human authorized deciding from the docs → §8.5 → BUG → fixed `moneyScope` at-risk to keep the partial-win remainder (`SUM(GREATEST(denied − won_recovered, 0))`) with a TDD int test. `resolveRecovery` math untouched.
-- Gates: root+web typecheck ✓, lint ✓, unit **284/284** ✓, int **24/24** ✓ (partial-win test added). **EXIT = CONTINUE** — after this push CI should be fully green (verify); then remaining pending = runtime smoke, apps/web lint-gap, a11y row-semantics, drizzle journal, normalizer-at-real-data. Money-path no longer blocks DEPLOY-READY.
+- Gates: root+web typecheck ✓, lint ✓, unit **284/284** ✓, int **24/24** ✓ (partial-win test added).
+- **CI VERIFIED GREEN** — run `28753034145` (commit `7ca4e0e`): quality + integration + **E2E + a11y (Playwright)** all pass. FIRST green CI in the project's history (E2E was red on every prior push). The money-arc login-picker fix + the responsive visible-SAR locator both landed. `ai-harden` is pushed to origin.
+- **EXIT = CONTINUE** — money-path no longer blocks DEPLOY-READY, CI is green. Remaining pending (lower-priority): apps/web ESLint gap (measure cascade first), chrome-devtools runtime smoke (config states + version-desync — partly covered now by the green CI a11y specs), a11y row-semantics, drizzle-kit journal (dev-tooling), normalizer-at-real-data (BLK-1). Then the 2 clean-pass tail for DEPLOY-READY → PR into main (human merges).
+
+### iteration 5 — apps/web ESLint gap closed (typescript-eslint; react-hooks/jsx-a11y deferred)
+
+- **Measured first** (react reviewer's CRITICAL: `eslint.config.mjs` ignored `apps/web/**` → `next lint` lints 0 files). A naive run showed 394 "errors" but those were GENERATED files (`.next/types` route types + `next-env.d.ts`); hand-written apps/web = only **3** `no-unused-vars` (`Button` in login, `SEV_COLOR` in scrubber-table, `and` in data.ts).
+- **Wired** apps/web into the root `eslint.config.mjs`: removed the ignore; added an `apps/web/**/*.{ts,tsx}` block (typescript-eslint recommended + no-unused-vars + jsx parserOptions); ignored `next-env.d.ts` + `*.config.{ts,cts,mts}` build tooling (tailwind.config uses `require()` legitimately). Fixed the 3 dead symbols.
+- **react-hooks + jsx-a11y DEFERRED**: the plugin install (127 transitive pkgs) kept failing on registry socket timeouts; reverted the partial package.json/lockfile write so CI's `--frozen-lockfile` stays intact. Follow-up when the registry is reachable — `rules-of-hooks` (error) is the high-value add.
+- Gates: root+web typecheck ✓, **lint 0 errors** (apps/web now enforced — confirmed via single-file lint; the 2 remaining warnings are pre-existing `.claude/scripts`, non-product), unit **284/284** ✓, int unchanged (24/24). **EXIT = CONTINUE** — remaining: react-hooks/jsx-a11y (registry), chrome-devtools runtime smoke, a11y row-semantics, drizzle journal, normalizer-at-real-data → 2 clean passes → PR.
