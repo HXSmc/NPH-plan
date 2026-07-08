@@ -177,8 +177,8 @@ IMPLEMENT:
 
 ## Git workflow & safety
 
-- **The app lives on `main` in this dir** (`~/Desktop/web apps/taweed`). IMPLEMENT was built in a worktree (`worktree-create-data-pipeline`, merged to `44e0e13` + deleted). The **EXECUTE buildable pass** was built on branch `execute-phase` (in-place, given the local-only gitignored docs live in this dir) and **merged to `main`**; `back-up` was left at the pre-EXECUTE tip `44e0e13` as the restore point.
-- **Backup-branch rule — `back-up` is the pre-advance `main` tip (restore point).** Before any push that advances `main`, snapshot the current (soon-to-be-previous) `main` tip onto `back-up`. After the EXECUTE merge, `back-up` = `44e0e13` (the pre-EXECUTE `main`); `main` carries EXECUTE.
+- **The app lives on `main` in this dir** (`~/Desktop/web apps/taweed`). IMPLEMENT was built in a worktree (`worktree-create-data-pipeline`, merged to `44e0e13` + deleted). The **EXECUTE buildable pass** was built on branch `execute-phase` and **merged to `main`**. **AI-4 (PROMPT 3)** was built in-place on branch `ai-phase-4` and has been **merged to local `main`** (merge commit `78b7801`, 2026-07-08) — **not yet pushed to `origin`** as of this writing; local `main` is several commits ahead of `origin/main` (last pushed tip `9813fc6`). Push only after the user explicitly confirms — this repo's session rules treat the push + `back-up` ritual as a hard stop-and-confirm gate, not a silent step.
+- **Backup-branch rule — `back-up` is the pre-advance `main` tip (restore point).** Before any push that advances `main`, snapshot the current (soon-to-be-previous) **pushed** `main` tip onto `back-up`. As of this writing (before the AI-4 push), `back-up` = `2d0e1bb` (one behind the last-pushed `origin/main` tip `9813fc6`, per the prior session's hotfix push). Once AI-4 is pushed, `back-up` should become `9813fc6` (the pre-AI-4-push `origin/main` tip) and `main` carries AI-4.
 
   ```bash
   git branch -f back-up main        # snapshot the current main tip (the 'old' commit)
