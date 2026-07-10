@@ -7,12 +7,21 @@ import {
   reasonPareto,
   trend,
   getLatestBaseline,
+  recoverability,
   type BaselineSnapshot,
   type DimRate,
   type MoneyScope,
   type ReasonRow,
   type TrendPoint,
 } from "@taweed/analytics";
+import {
+  recoverableSplit,
+  projectedRecoveryRange,
+  aggregateTopPayers,
+  type RecoverableSplit,
+  type ProjectedRecoveryRange,
+  type TopPayerRow,
+} from "./report-data";
 import {
   scrub,
   SCRUBBER_RULES,
@@ -232,22 +241,17 @@ export interface RecoveryBundle {
   rows: AppealPipelineRow[];
 }
 
-export function getRecovery(tenantId: string): Promise<RecoveryBundle> {
-  return withSession(tenantId, async (db) => {
-    const [money, baseline] = await Promise.all([
-      getMoneyScope(tenantId),
-      getLatestBaseline(db),
-    ]);
-    const rows = await db.execute<{
-      appeal_id: string;
-      claim_id: string;
-      nphies_claim_id: string | null;
-      payer_name: string;
-      status: string;
-      appealed_sar: string;
-      recovered_sar: string | null;
-      days_open: number;
-    }>(sql`
+async function appealPipelineRows(db: Database, limit = 200): Promise<AppealPipelineRow[]> {
+  const rows = await db.execute<{
+    appeal_id: string;
+    claim_id: string;
+    nphies_claim_id: string | null;
+    payer_name: string;
+    status: string;
+    appealed_sar: string;
+    recovered_sar: string | null;
+    days_open: number;
+  }>(sql`
       SELECT a.id AS appeal_id, c.id AS claim_id, c.nphies_claim_id,
              p.name AS payer_name, a.status,
              d.denied_amount AS appealed_sar, a.recovered_amount AS recovered_sar,
@@ -258,18 +262,26 @@ export function getRecovery(tenantId: string): Promise<RecoveryBundle> {
         JOIN claims c ON c.id = cl.claim_id
         JOIN payers p ON p.id = c.payer_id
        ORDER BY a.recovered_amount DESC NULLS LAST, d.denied_amount DESC
-       LIMIT 200`);
+       LIMIT ${limit}`);
+  return rows.rows.map((r) => ({
+    appealId: r.appeal_id,
+    claimId: r.claim_id,
+    nphiesClaimId: r.nphies_claim_id,
+    payerName: r.payer_name,
+    status: r.status,
+    appealedSar: r.appealed_sar,
+    recoveredSar: r.recovered_sar,
+    daysOpen: Number(r.days_open),
+  }));
+}
 
-    const list: AppealPipelineRow[] = rows.rows.map((r) => ({
-      appealId: r.appeal_id,
-      claimId: r.claim_id,
-      nphiesClaimId: r.nphies_claim_id,
-      payerName: r.payer_name,
-      status: r.status,
-      appealedSar: r.appealed_sar,
-      recoveredSar: r.recovered_sar,
-      daysOpen: Number(r.days_open),
-    }));
+export function getRecovery(tenantId: string): Promise<RecoveryBundle> {
+  return withSession(tenantId, async (db) => {
+    const [money, baseline, list] = await Promise.all([
+      getMoneyScope(tenantId),
+      getLatestBaseline(db),
+      appealPipelineRows(db),
+    ]);
 
     // Win rate + median days over ALL appeals (not the display-limited/recovered-
     // biased rows), so the ROI metrics are honest.
@@ -301,6 +313,79 @@ export function getRecovery(tenantId: string): Promise<RecoveryBundle> {
       shareSar,
       baseline,
       rows: list,
+    };
+  });
+}
+
+// ---------- Reports (A3) ----------
+// Both bundles are read-only presentation layers over the SAME rollups
+// getAnalytics/getRecovery already use — no new money math, per design-brief §9/§10.
+
+export interface AuditReportBundle {
+  money: MoneyScope;
+  overallRate: number;
+  byPayer: DimRate[];
+  pareto: ReasonRow[];
+  split: RecoverableSplit;
+  range: ProjectedRecoveryRange;
+}
+
+/** A3 free-audit leave-behind report: the tenant's own denial exposure. */
+export function getAuditReportData(tenantId: string): Promise<AuditReportBundle> {
+  return withSession(tenantId, async (db) => {
+    const [money, byPayer, pareto, recoverabilityRows] = await Promise.all([
+      getMoneyScope(tenantId),
+      denialRateDim(db, "payer"),
+      reasonPareto(db),
+      recoverability(db),
+    ]);
+    const totalClaims = byPayer.reduce((acc, r) => acc + r.claims, 0);
+    const deniedClaims = byPayer.reduce((acc, r) => acc + r.denied, 0);
+    const overallRate = totalClaims > 0 ? deniedClaims / totalClaims : 0;
+    return {
+      money,
+      overallRate,
+      byPayer,
+      pareto,
+      split: recoverableSplit(pareto, recoverabilityRows),
+      range: projectedRecoveryRange(money.atRiskSar, recoverabilityRows),
+    };
+  });
+}
+
+export interface OwnerReportBundle {
+  recoveredThisMonthSar: string;
+  /** "YYYY-MM" of the most recent trend bucket, or null with no dated claims. */
+  monthLabel: string | null;
+  firstPassRate: number;
+  /** First-pass rate at onboarding, or null if no baseline was ever captured. */
+  baselineFirstPassRate: number | null;
+  topPayers: TopPayerRow[];
+}
+
+/** A3 one-tap owner report: what a signed-in owner recovered, on demand. */
+export function getOwnerReportData(tenantId: string): Promise<OwnerReportBundle> {
+  return withSession(tenantId, async (db) => {
+    const [byPayer, trendPts, baseline, rows] = await Promise.all([
+      denialRateDim(db, "payer"),
+      trend(db),
+      getLatestBaseline(db),
+      appealPipelineRows(db),
+    ]);
+    const totalClaims = byPayer.reduce((acc, r) => acc + r.claims, 0);
+    const deniedClaims = byPayer.reduce((acc, r) => acc + r.denied, 0);
+    const overallRate = totalClaims > 0 ? deniedClaims / totalClaims : 0;
+    const latest = trendPts.length > 0 ? trendPts[trendPts.length - 1] : null;
+    const baselineFirstPassRate =
+      baseline && baseline.claimCount > 0
+        ? 1 - baseline.deniedCount / baseline.claimCount
+        : null;
+    return {
+      recoveredThisMonthSar: latest?.recoveredSar ?? "0.00",
+      monthLabel: latest?.period ?? null,
+      firstPassRate: 1 - overallRate,
+      baselineFirstPassRate,
+      topPayers: aggregateTopPayers(rows),
     };
   });
 }

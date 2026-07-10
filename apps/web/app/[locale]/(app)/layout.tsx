@@ -33,23 +33,31 @@ export default async function AppLayout({
   const scopeLabel = `${session.tenantName}, ${t("allBranches")}, ${t("lastMonths", { n: 6 })}`;
 
   return (
-    <div className="flex min-h-screen bg-bg">
+    <div className="flex min-h-screen bg-bg print:min-h-0 print:block">
       <SkipLink label={t("skipToContent")} />
-      <Rail role={session.role} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <CommandBar
-          tenantName={session.tenantName}
-          role={session.role}
-          email={session.email}
-          recovered={toNumber(money.recoveredSar)}
-          atRisk={toNumber(money.atRiskSar)}
-          scopeLabel={scopeLabel}
-          branches={branches}
-        />
+      {/* A3 print/PDF report pages (audit-report, owner-report) render inside
+          this shell so they keep normal RBAC + session handling; the nav rail
+          and command bar are screen-only chrome and must not appear on the
+          printed/PDF page. */}
+      <div className="print:hidden">
+        <Rail role={session.role} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col print:block">
+        <div className="print:hidden">
+          <CommandBar
+            tenantName={session.tenantName}
+            role={session.role}
+            email={session.email}
+            recovered={toNumber(money.recoveredSar)}
+            atRisk={toNumber(money.atRiskSar)}
+            scopeLabel={scopeLabel}
+            branches={branches}
+          />
+        </div>
         <main
           id="main-content"
           tabIndex={-1}
-          className="mx-auto w-full max-w-[1400px] flex-1 p-5 md:p-6 focus:outline-none"
+          className="mx-auto w-full max-w-[1400px] flex-1 p-5 focus:outline-none md:p-6 print:max-w-none print:p-0"
         >
           {children}
         </main>

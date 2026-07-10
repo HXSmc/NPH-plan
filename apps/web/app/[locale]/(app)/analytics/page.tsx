@@ -5,10 +5,12 @@ import { formatMoney, formatPct, toNumber } from "@/lib/money";
 import { PageHeader, Provenance } from "@/components/shell/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { MoneyFigure } from "@/components/money/money-figure";
 import { RankedBars } from "@/components/charts/ranked-bars";
 import { Pareto } from "@/components/charts/pareto";
 import { TrendLine } from "@/components/charts/trend-line";
+import { Link } from "@/i18n/navigation";
 import { denialLabel, isDenialReasonCode } from "@taweed/shared";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +70,14 @@ export default async function AnalyticsPage({
 
   return (
     <div>
-      <PageHeader title={t("title")} />
+      <PageHeader
+        title={t("title")}
+        action={
+          <Button variant="secondary" asChild>
+            <Link href="/analytics/audit-report">{t("buildAuditReport")}</Link>
+          </Button>
+        }
+      />
 
       {/* Hero strip — the largest type in the app is money they are losing. */}
       <section className="rounded-xl border border-hairline bg-surface-1 p-6 md:p-8">

@@ -106,7 +106,8 @@
     "denialRate": "Denial rate",
     "atRiskSar": "At risk (SAR)",
     "emptyTitle": "No claims yet",
-    "emptyBody": "Ingest 3 to 6 months of remittances to see your denial map."
+    "emptyBody": "Ingest 3 to 6 months of remittances to see your denial map.",
+    "buildAuditReport": "Build the free-audit report"
   },
   "ingest": {
     "title": "Ingest",
@@ -340,5 +341,45 @@
     "actionTitle": "Get your leak number this week.",
     "actionBody": "A free denial audit on your own data. We quantify the leak in one report and leave it with you.",
     "footer": "Taweed. NPHIES denial recovery for KSA clinic groups."
+  },
+  "onboarding": {
+    "stepOf": "Step {step} of {total}",
+    "continue": "Continue",
+    "step1Title": "Locale and theme",
+    "step1Lead": "Arabic or English. Light or dark. No account setup.",
+    "step2Title": "Confirm your branches",
+    "step2Lead": "One branch is enough to start.",
+    "step3Title": "Upload your remittances",
+    "step3Lead": "Drag 3 to 6 months of remittances. NPHIES ClaimResponse export, XLSX, or EOB PDF.",
+    "doThisWithMe": "Do this with me",
+    "doThisWithMeLead": "Book a white-glove import. We do the first one with you.",
+    "step4Title": "Your first insight",
+    "step4Lead": "{claims} claims imported. {denials} denials detected.",
+    "seeTheLeak": "See your denial map",
+    "handoffSaveError": "We could not save this step. Your data is safe, try again."
+  },
+  "report": {
+    "auditTitle": "Denial exposure report",
+    "ownerTitle": "Owner report",
+    "coverLead": "denied across the last 6 months",
+    "denialRateLabel": "Denial rate",
+    "leakByPayer": "Leak by payer",
+    "topReasons": "Top denial reasons",
+    "recoverableSplit": "Recoverable versus structural",
+    "recoverable": "Recoverable",
+    "structural": "Structural",
+    "projectedRecovery": "Projected recovery range",
+    "recoveredThisMonth": "Recovered this month",
+    "firstPassRate": "First-pass rate",
+    "topPayersRecovered": "Top payers recovered from",
+    "emptyTopPayers": "No wins recovered yet.",
+    "percentagePoints": "pp",
+    "trustResidency": "In-Kingdom data, Riyadh (Oracle Cloud). PDPL.",
+    "trustEncryption": "AES-256 at rest.",
+    "trustDevice": "Not an SFDA medical device. Decision support with human review.",
+    "trustIsolation": "Per-tenant data isolation.",
+    "sourceNote": "From your uploaded remittances, {range}.",
+    "print": "Print or save as PDF",
+    "generatedFor": "Generated for"
   }
 }

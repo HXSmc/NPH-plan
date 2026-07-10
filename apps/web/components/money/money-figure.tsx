@@ -11,6 +11,9 @@ interface MoneyFigureProps {
   size?: "hero" | "stat";
   deltaPct?: number;
   className?: string;
+  /** Set false for a static render — no count-up (e.g. a printed/PDF report,
+   * design-brief §9/§10, where the figure must be correct at first paint). */
+  animate?: boolean;
 }
 
 const toneText: Record<MoneyFigureProps["tone"], string> = {
@@ -25,6 +28,7 @@ export function MoneyFigure({
   size = "hero",
   deltaPct,
   className,
+  animate = true,
 }: MoneyFigureProps) {
   const Arrow =
     tone === "recovered" ? TrendingUp : tone === "atRisk" ? ArrowRight : ArrowRight;
@@ -34,6 +38,7 @@ export function MoneyFigure({
       <CountUp
         value={value}
         durationMs={tone === "atRisk" ? 900 : 1000}
+        animate={animate}
         className={cn(
           "num-hero font-medium leading-none",
           size === "hero" ? "text-hero" : "text-display",

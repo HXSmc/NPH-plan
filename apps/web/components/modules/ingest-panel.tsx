@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { UploadCloud, FileJson, CheckCircle2, Loader2 } from "lucide-react";
 import { resolveUploadState, type UploadState } from "@/lib/ingest-submit";
 import type { ExtractEobPdfResult } from "@/lib/actions/eob-extract";
+import type { IngestResult } from "@/lib/actions/ingest";
 import { formatMoney } from "@/lib/money";
 import { CountUp } from "@/components/money/count-up";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,17 @@ function pdfErrorMessageKey(error: ExtractEobPdfResult["error"]): string {
 // Split view (design-brief §8.1): inline-start dropzone, inline-end live run
 // ledger with tabular counters. Malformed rows are quarantined with a reason,
 // never silently dropped.
-export function IngestPanel() {
+//
+// `onIngestSuccess` is optional and additive (A2 first-run corridor step 3):
+// the /ingest page renders this with no props, exactly as before. The
+// corridor passes a callback so it can advance to the handoff step the
+// instant a JSON/FHIR-bundle upload actually succeeds, without duplicating
+// any of this component's dropzone/run-ledger logic.
+export function IngestPanel({
+  onIngestSuccess,
+}: {
+  onIngestSuccess?: (result: IngestResult) => void;
+} = {}) {
   const t = useTranslations("ingest");
   const [pending, start] = React.useTransition();
   const [state, setState] = React.useState<UploadState | null>(null);
@@ -63,7 +74,14 @@ export function IngestPanel() {
   const submit = (file: File) => {
     const fd = new FormData();
     fd.set("file", file);
-    start(async () => setState(await resolveUploadState(file, fd)));
+    start(async () => {
+      const next = await resolveUploadState(file, fd);
+      setState(next);
+      // Called directly where the result becomes available, not via a
+      // useEffect watching `state` — notifying a caller of a state change
+      // belongs in the event handler that produced it (react/hooks.md).
+      if (next.kind === "json" && next.result.ok) onIngestSuccess?.(next.result);
+    });
   };
 
   const result = state?.kind === "json" ? state.result : null;
