@@ -208,6 +208,8 @@ For the demo accounts, the emails follow the pattern `<role>@<clinic-slug>.dev`,
 
 Sign in as **rcm @ Al Salama Dental Group**. You'll be redirected to the **Analytics** page (rcm's landing module; owners land on Overview instead).
 
+> **Step 0 — the first-run corridor (EXECUTE A2), if you want to see it:** a brand-new tenant with no captured recovery baseline is redirected to `/onboarding` instead of its normal landing module — a 4-step guided flow (locale + theme, confirm branches, upload remittances, first-insight handoff) instead of the dashboard. The seed script (`scripts/seed.ts`) captures a baseline for every demo tenant as part of seeding (EXECUTE B8), so **every seeded demo account you log in with above already counts as "past onboarding"** and goes straight to its normal landing page — you will not see the corridor by picking a demo account. To see it, either delete that tenant's row from `recovery_baselines` (`DELETE FROM recovery_baselines WHERE tenant_id = '<id>';`) and log in again, or navigate directly to `http://localhost:3000/en/onboarding` while signed in (the page itself re-checks and bounces you back out to your landing module if a baseline already exists, so this only shows real content pre-baseline). The corridor's upload step reuses the same Ingest dropzone as Step 3 below; RBAC is unchanged, so an **owner** account attempting the upload there still gets the real "not authorized" response (owner's `ingest` capability is `hidden` per `rbac.ts`) — that's why the corridor also offers a "Do this with me" white-glove CTA (a `mailto:` link) as the owner's primary path.
+
 The persistent layout you'll see on every page:
 
 - **Left rail** (vertical nav) — the module icons. On a narrow window it's icons-only; widen past ~1024px to see labels. In Arabic it flips to the right side.
@@ -220,7 +222,7 @@ Click **Overview** in the left rail.
 
 - The big emerald number is **Recovered SAR** — the product's hero metric.
 - To its side: **At-risk SAR** (money still recoverable), **Win rate**, **Median days to recovery**.
-- Below: two "forward" cards — *Run scrubber* and *Build report* — that link deeper.
+- Below: two "forward" cards — *Run scrubber* and *Build report* — that link deeper. **Build report** now opens the real **owner report** (EXECUTE A3, `/recovery/owner-report`) — a one-page, print/PDF-able summary (recovered this month, first-pass rate vs. onboarding baseline, top payers recovered from), not a placeholder link to the Recovery page anymore.
 - **What to verify:** the big number renders large (not tiny). A past bug rendered hero numbers at 14px; it's fixed, so this is a good visual regression check.
 
 ### Step 2 — Denial Analytics
@@ -228,6 +230,7 @@ Click **Analytics**.
 
 - Top strip: the **denial rate** as a huge red percentage, plus **at-risk SAR**.
 - Charts: a **trend line** (denials over ~6 months), a **Pareto** chart (denials by reason, ranked), **by payer** ranked bars, **by branch** ranked bars.
+- Top-right of the page header: **Build the free-audit report** (EXECUTE A3, `/analytics/audit-report`) — a bilingual, print/PDF-able leave-behind document: cover denial-rate/at-risk figures, leak by payer, top reasons (reusing this same Pareto), a recoverable-vs-structural split, and a projected recovery range. Click the **Print or save as PDF** button on that page (it calls the browser's own print dialog — there is no server-side PDF pipeline, by design) to see the app chrome (rail/command bar) disappear via `print:` CSS, leaving just the report.
 - **What to verify:** charts actually render (they use hard-coded HEX colors deliberately — CSS variables don't work inside SVG). Hover a bar/point; numbers should be sensible.
 
 ### Step 3 — Ingest (data intake)
@@ -290,6 +293,7 @@ Click **Recovery**.
 - Below: the appeal **pipeline grouped by stage** (submitted / under review / won / lost), each stage rolling up its appealed and recovered SAR.
 - For any non-terminal appeal, you get **Mark won / Mark lost** buttons. Click **Mark won** → the page refreshes and the recovered totals update. This is how the headline number grows.
 - **What to verify:** marking an appeal won moves it to the "won" group and increases Recovered SAR consistently.
+- The **owner report** (EXECUTE A3) also lives one click away here: same destination as Overview's *Build report* card, `/recovery/owner-report`. RBAC-gated the same as this page (hidden for clinician).
 
 ### Step 7 — Settings (four tabs, four different jobs)
 Click **Settings**. It's four tabs; each answers a different question about the product. (AI-4's review queue is **not** here — it lives on the Ingest page, §Step 3b.)
@@ -632,7 +636,7 @@ Strong, and clearly a priority:
 
 ## 2.9 Testing strategy
 
-- **Unit tests (Vitest, ≈ pytest/JUnit):** pure logic, utilities, the AI code via a **fixture provider** (record/replay, so CI never calls the real API or needs a key). Baseline **444 passing** (up from ~340 pre-AI-4).
+- **Unit tests (Vitest, ≈ pytest/JUnit):** pure logic, utilities, the AI code via a **fixture provider** (record/replay, so CI never calls the real API or needs a key). Baseline **769 passing** (up from 708 pre-EXECUTE-UI-tail, 444 pre-AI-4).
 - **Integration tests:** run against a real Postgres, single-fork, **destructive**. They prove migrations, RLS enforcement, append-only privileges, and money reconciliation. Baseline **37 passing** (up from ~33 pre-AI-4).
 - **Live eval harness (AI-4 only, `packages/ai/evals/*.eval.ts`):** gated behind `AI_EVALS_LIVE=1`, never runs in CI or `pnpm test`. **Exists but has never scored a real model pass** — it's blocked on a not-yet-built HTML→PDF rasterizer for the synthetic corpus (see §1.11). Don't confuse "the harness runs green" with "the model is accurate against its 98%/95% target thresholds" — those targets are aspirational until the rasterizer lands and a real scored run happens.
 - **E2E + accessibility (Playwright):** run in CI against a seeded DB. First green CI in the project's history was achieved during the harden loop. (Can't run locally here — Node 20.2.0 — see §1.11.)
@@ -655,6 +659,8 @@ Taweed is **fully built on synthetic data** and deliberately **stubs the parts t
 | PDF-OCR ingest (AI-4) | **Implemented and tested on synthetic PDFs** (`ClaudeVisionOcrAdapter`) — this is no longer a stub, but it is **gated off real data**: no real partner document may reach it until BLK-AI-1/3/4 clear | Route decision (cloud vs. self-hosted VLM) + counsel PDPL sign-off, then real documents |
 | Synthetic-EOB → PDF rasterizer | **Not built** — the corpus generator produces ground-truth data + an HTML template, never actual PDF bytes (`TODO(ai-route)` in `test/synthetic-eob/src/generate.ts`) | Needed before the AI-4 eval harness can run a real scored pass |
 | The headline "recovered SAR on a real clinic" | Synthetic | Needs a real design partner's data (`BLK-1`) + SME-reviewed taxonomy (`BLK-9`) |
+| A3 report PDF generation | Browser print-to-PDF (`window.print()` + `print:` CSS) | A server-side PDF render pipeline, if a non-interactive export is ever required |
+| A3's "projected recovery range" | A 15 to 35 percent conservative modeled estimate (badged `MOCK`) until a tenant has resolved appeals of its own; then a real historical-win-rate band | Same mechanism at scale, more data to narrow the band |
 
 If you see a `TODO(nphies-creds)` or `TODO(ksa-oidc)` comment, that's a **known, intentional stub**, not a bug.
 
@@ -694,7 +700,7 @@ The ledger's own "Deploy-Ready DoD" checklist is a good living to-do list; sever
 1. Run the automated suites (§1.11) — see them green yourself.
 2. Do the full click-through (§1.8) with AI off, then on (§1.10), including AI-4's Review queue (§Step 3b).
 3. Read `docs/handoff.md`, `docs/ai-deploy-readiness.md`, and `docs/blocker.md` — they're the living project memory.
-4. AI-0 through AI-4 are now all built on synthetic data. The next planned unit is whatever comes after §9 in `docs/04_agentic_retrofit_plan.md` — check `docs/NEXT_STEP_PROMPT.md` for the current pointer. Two concrete gaps worth closing before AI-4 sees real data: build the synthetic-EOB→PDF rasterizer so the eval harness can actually score the model (§2.9), and add an adjustment/withholding bucket to the extraction schema so a real remittance with a contractual write-off doesn't get stuck permanently un-approvable (§2.11). The real-data headline itself still waits on the external blockers (BLK-1/2/9) and, for AI-4 specifically, the production-route decision + counsel sign-off (BLK-AI-1/3/4).
+4. AI-0 through AI-4 are all built on synthetic data, and the EXECUTE UI tail (A2 first-run corridor, A3 free-audit + owner report) is now built too — check `docs/NEXT_STEP_PROMPT.md` for the current pointer to whatever's next. Two concrete gaps worth closing before AI-4 sees real data: build the synthetic-EOB→PDF rasterizer so the eval harness can actually score the model (§2.9), and add an adjustment/withholding bucket to the extraction schema so a real remittance with a contractual write-off doesn't get stuck permanently un-approvable (§2.11). The real-data headline itself still waits on the external blockers (BLK-1/2/9) and, for AI-4 specifically, the production-route decision + counsel sign-off (BLK-AI-1/3/4).
 
 ## 2.13 Beginner glossary
 

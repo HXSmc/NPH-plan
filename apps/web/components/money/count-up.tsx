@@ -12,6 +12,10 @@ interface CountUpProps {
   className?: string;
   /** Fires once at settle (e.g. brightness tick on recovered). */
   onSettle?: () => void;
+  /** Set false to render the final value immediately, no observer/animation
+   * (e.g. a printed/PDF report — the figure must be correct at first paint,
+   * not mid-count-up if `window.print()` fires before the animation settles). */
+  animate?: boolean;
 }
 
 const easeOutExpo = (t: number) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t));
@@ -27,9 +31,10 @@ export function CountUp({
   durationMs = 1000,
   className,
   onSettle,
+  animate = true,
 }: CountUpProps) {
   const ref = React.useRef<HTMLSpanElement>(null);
-  const [display, setDisplay] = React.useState(0);
+  const [display, setDisplay] = React.useState(animate ? 0 : value);
   const displayRef = React.useRef(0); // latest shown value (survives closures)
   const revealedRef = React.useRef(false);
   const rafRef = React.useRef<number | null>(null);
@@ -37,6 +42,11 @@ export function CountUp({
   settleRef.current = onSettle;
 
   React.useEffect(() => {
+    if (!animate) {
+      displayRef.current = value;
+      setDisplay(value);
+      return;
+    }
     const el = ref.current;
     if (!el) return;
     const reduce =
@@ -48,7 +58,7 @@ export function CountUp({
       setDisplay(v);
     };
 
-    const animate = () => {
+    const runAnimation = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       const from = displayRef.current;
       if (reduce || from === value) {
@@ -68,7 +78,7 @@ export function CountUp({
 
     if (revealedRef.current) {
       // Already in view once: animate immediately from current → new value.
-      animate();
+      runAnimation();
       return () => {
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
       };
@@ -79,7 +89,7 @@ export function CountUp({
         if (entries.some((e) => e.isIntersecting)) {
           revealedRef.current = true;
           io.disconnect();
-          animate();
+          runAnimation();
         }
       },
       { threshold: 0.3 },
@@ -89,7 +99,7 @@ export function CountUp({
       io.disconnect();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [value, durationMs]);
+  }, [value, durationMs, animate]);
 
   return (
     <span ref={ref} className={cn("num", className)}>

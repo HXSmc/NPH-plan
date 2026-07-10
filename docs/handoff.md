@@ -2,21 +2,22 @@
 
 > Entry point for a new Claude Code session picking up Taweed. Read this, then run the
 > next-step prompt (`docs/NEXT_STEP_PROMPT.md`). Blocker register + a per-blocker unblock prompt:
-> `docs/blocker.md`. Written 2026-07-04; last refreshed 2026-07-10 (**a full 6-pass code-quality
-> audit sweep now done and merged to local `main`** — bug hunt, security, API/action auth-checks,
-> dependency CVEs/abandonment, WCAG AA accessibility, and a codebase-minimap weakness sweep; see
-> `docs/audit.md` for the consolidated runbook + all findings/fixes. This was an orthogonal
-> code-quality initiative, NOT product work — it does not change what's next for the product.
-> **PROMPT 3 = AI-4 vision EOB/PDF extraction remains BUILT** on branch `ai-phase-4` (merged to
-> `main` before the audit sweep) — synthetic-only, dual-gated, additive, fail-closed. This closes
-> out `docs/04_agentic_retrofit_plan.md` §9 entirely: AI-0 through AI-4 are all built and merged,
-> confirmed again 2026-07-10 — **there is no PROMPT 4 in that plan and none was added.** Next
-> product unit = the EXECUTE UI tail (**A2 first-run corridor, A3 free-audit + owner report**),
-> independently pending since before the AI phase started — see `docs/NEXT_STEP_PROMPT.md`. The
-> real-data headline (BLK-1/2/9) remains independently pending too. **A working Claude API key is
-> already filled in at `apps/web/.env.local` (`ANTHROPIC_API_KEY`, added 2026-07-10) and ready to
-> use — the key itself is not reproduced here since this file is committed to git. `TAWEED_AI_ENABLED`
-> and all per-feature AI flags remain OFF; the user wants to test manually before enabling anything.**
+> `docs/blocker.md`. Written 2026-07-04; last refreshed 2026-07-10 (**the EXECUTE UI tail — A2
+> first-run corridor + A3 free-audit/owner reports — is now BUILT** on branch `execute-ui-tail`, in
+> this directory, not yet merged to `main`; see the new bullet in "Where the project stands" below
+> and `docs/NEXT_STEP_PROMPT.md` for what comes after). Earlier the same day: **a full 6-pass
+> code-quality audit sweep done and merged to local `main`** — bug hunt, security, API/action
+> auth-checks, dependency CVEs/abandonment, WCAG AA accessibility, and a codebase-minimap weakness
+> sweep; see `docs/audit.md` for the consolidated runbook + all findings/fixes. That sweep was an
+> orthogonal code-quality initiative, NOT product work. **PROMPT 3 = AI-4 vision EOB/PDF extraction
+> remains BUILT** on branch `ai-phase-4` (merged to `main` before the audit sweep) — synthetic-only,
+> dual-gated, additive, fail-closed. This closes out `docs/04_agentic_retrofit_plan.md` §9 entirely:
+> AI-0 through AI-4 are all built and merged, confirmed again 2026-07-10 — **there is no PROMPT 4 in
+> that plan and none was added.** The real-data headline (BLK-1/2/9) remains independently pending.
+> **A working Claude API key is already filled in at `apps/web/.env.local` (`ANTHROPIC_API_KEY`,
+> added 2026-07-10) and ready to use — the key itself is not reproduced here since this file is
+> committed to git. `TAWEED_AI_ENABLED` and all per-feature AI flags remain OFF; the user wants to
+> test manually before enabling anything.**
 
 ## Where the project stands
 
@@ -103,17 +104,78 @@
   `docs/minimap.md` — gitignored/local-only, the only pass whose doc isn't committed). Current
   totals after all 6 passes: unit **708/708**, integration **42/42**, root+web typecheck clean,
   lint 0 errors, `apps/web` production build green.
-- **Next up:** `docs/04_agentic_retrofit_plan.md` §9 (PROMPT 1–3) is now fully built — there is no
-  PROMPT 4, re-confirmed 2026-07-10. The next concrete PRODUCT unit is the EXECUTE UI tail (**A2
-  first-run corridor**, **A3 free-audit + owner report**), independently pending since before the
-  AI phase started — the audit sweep above did not touch this. The **real-data headline** stays
-  gated on BLK-1/2/9 as always, and AI-4's production route is a separate legal/ops track
-  (BLK-AI-1/3/4). Paste-ready: `docs/NEXT_STEP_PROMPT.md`.
-- Roadmap: CREATE ✅ → IMPLEMENT ✅ → **EXECUTE (buildable pass ✅ · UI tail A2/A3 pending · headline pending real data)** → **AI phase (AI-0 ✅ · AI-1 ✅ · AI-2 ✅ · AI-3 ✅ · AI-4 ✅ · AI-5 deferred)** → DEPLOY.
+- **EXECUTE UI tail — A2 + A3 — DONE (synthetic data), built 2026-07-10 on branch `execute-ui-tail`
+  (in this dir, NOT yet merged to `main`).** The two product units independently pending since
+  before the AI phase started, per `docs/superpowers/plans/execute-phase.md` Tier 3:
+  - **A2 first-run corridor** — a tenant with no captured `recovery_baselines` row (EXECUTE B8) is
+    routed to `/onboarding` instead of its normal landing module (`apps/web/lib/onboarding.ts`'s
+    `isOnboarded`, wired into `apps/web/app/[locale]/page.tsx` and the onboarding page's own bounce-
+    out check). Four steps in a chromeless route group (`(onboarding)`, no Rail/CommandBar): locale
+    + theme (reuses `LocaleToggle`/`ThemeToggle`), branch confirm (`Switch` toggles, not persisted —
+    a self-act ritual, not a data write), upload (reuses `IngestPanel` unmodified, now with an
+    additive optional `onIngestSuccess` callback prop), and a step-4 handoff that captures the
+    baseline (`completeOnboarding` server action, idempotent, rate-limited, audited) and shows a
+    resolved money-at-risk hero with a **user-actuated** CTA into Denial Analytics (deliberately not
+    an auto-redirect — avoids an unannounced WCAG 3.2.5 context change). Seeded demo tenants already
+    have a baseline (`scripts/seed.ts` calls `captureBaseline` per tenant), so **no existing demo
+    account sees the corridor** — see `docs/review.md`'s new "Step 0" for how to trigger it
+    manually. An **owner** account's dropzone attempt inside the corridor still hits the existing
+    `ingestBundle` RBAC gate (`ingest` is `hidden` for owner) and surfaces its real "not authorized"
+    error — deliberate, undocumented RBAC is NOT touched by this unit; that's why the corridor's
+    "Do this with me" white-glove CTA (a `mailto:` link) is the owner's primary path, not the
+    dropzone.
+  - **A3 free-audit report + owner report** — two new bilingual, print/PDF-able report pages, built
+    entirely from existing `@taweed/analytics` rollups (no new money math): `getAuditReportData` and
+    `getOwnerReportData` (`apps/web/lib/data.ts`) compose `moneyScope`/`denialRateDim`/`reasonPareto`/
+    `recoverability`/`trend`/`getLatestBaseline` plus three new pure derivations in
+    `apps/web/lib/report-data.ts` (`recoverableSplit`, `projectedRecoveryRange` — a conservative
+    15-35% modeled band, badged `MOCK`, until a tenant has its own resolved-appeal history —
+    `aggregateTopPayers`). Pages: `/analytics/audit-report` (no extra RBAC gate, mirrors the parent
+    Analytics page which `rbac.ts` never hides) and `/recovery/owner-report` (RBAC-gated same as
+    Recovery, hidden for clinician). PDF export is the browser's own print-to-PDF (`window.print()` +
+    `print:` Tailwind variants added to `apps/web/app/[locale]/(app)/layout.tsx` to hide the Rail/
+    CommandBar) — **not** a server-side PDF pipeline, a deliberate scope call (no local browser to
+    drive a headless render anyway). Overview's existing "Build report" forward card now points at
+    the real owner report instead of a placeholder link to `/recovery`; Denial Analytics gained a
+    "Build the free-audit report" header action.
+  - **Multi-lens review (typescript + security + a11y-architect) run on the diff, findings fixed,
+    re-verified green:** a TOCTOU race in `completeOnboarding` (two concurrent calls for the same
+    tenant could both observe no baseline and both insert one — no unique constraint on
+    `recovery_baselines`) found independently by BOTH the typescript and security reviewers, closed
+    with a per-tenant `pg_advisory_xact_lock` held for the transaction; a fire-and-forget
+    `completeOnboarding()` call in the corridor (typescript, HIGH) that could silently desync the
+    onboarding gate from the UI on a server error — now awaited, error-handled, with a visible retry
+    affordance; a `useEffect`-to-notify-a-parent anti-pattern in `IngestPanel` (typescript, MEDIUM;
+    this repo's own `react/hooks.md` explicitly bans this) — the callback now fires directly in the
+    upload's async transition, no ref-guarded effect; no focus management across the corridor's 4
+    step transitions including the automatic step-3-to-4 handoff (a11y) — each step's `<h1>` now
+    receives focus on mount, and the step-label paragraph is a polite live region; the printed/PDF
+    leave-behind report dropped the tenant name entirely (a11y — `ReportShell`'s `print:hidden`
+    wrapper enclosed both the tenant-name block and the print button; now only the button is
+    screen-only); `.num` was forcing LTR direction onto full Arabic sentences instead of just the
+    numeral tokens it's meant for (a11y/RTL — removed from three prose strings); plus two smaller
+    a11y fixes taken from the same review (`Progress` now forwards `value`/`max` to Radix so
+    `aria-valuenow` is real, not indeterminate; `MoneyFigure`/`CountUp` gained an `animate` prop, set
+    `false` in both report documents, so a report's hero figure is correct at first paint rather than
+    mid-count-up if `window.print()` fires early). Security review otherwise confirmed clean: RLS/
+    tenant-isolation, RBAC (including the deliberate owner-can't-upload interplay above), the mailto
+    injection surface, rate-limiting, and audit-log completeness all held up under adversarial read.
+  - **Verified after fixes:** unit **769/769** green (up from 708 pre-unit, 763 before the review
+    fixes), root+web typecheck clean, lint clean, `apps/web` production build green (new routes
+    confirmed in the build output: `/onboarding`, `/analytics/audit-report`, `/recovery/owner-report`).
+  - **Not yet built (still pending, unrelated to this unit):** the **B6 field-mapping panel** wired
+    into the Ingest UI (CSV/XLSX column-to-field override surface) — mentioned in the same Tier 3
+    plan but not part of A2/A3's scope.
+- **Next up:** `docs/04_agentic_retrofit_plan.md` §9 (PROMPT 1–3) is fully built — there is no
+  PROMPT 4, re-confirmed 2026-07-10. With A2/A3 now also built, the EXECUTE phase's buildable scope
+  is complete except the **B6 field-mapping panel** (independently pending, not gating anything) and
+  the **real-data headline**, which stays gated on BLK-1/2/9 as always; AI-4's production route is a
+  separate legal/ops track (BLK-AI-1/3/4). Paste-ready: `docs/NEXT_STEP_PROMPT.md`.
+- Roadmap: CREATE ✅ → IMPLEMENT ✅ → **EXECUTE (buildable pass ✅ · UI tail A2/A3 ✅ · B6 field-mapping panel pending · headline pending real data)** → **AI phase (AI-0 ✅ · AI-1 ✅ · AI-2 ✅ · AI-3 ✅ · AI-4 ✅ · AI-5 deferred)** → DEPLOY.
 
 ## Can you start now?
 
-**The buildable half of EXECUTE — yes, now, on synthetic data** (finish the IMPLEMENT DoD tail: E2E/a11y/Lighthouse in CI, first-run corridor, free-audit report, landing; plus real-data scaffolding B5–B8 and typed DEPLOY swaps). **The headline** (recovered-SAR on a real clinic) is human-gated — see `docs/blocker.md` (needs B1 design-partner data + B2 real codes + B9 SME sign-off).
+**The buildable half of EXECUTE is DONE on synthetic data** (E2E/a11y/Lighthouse in CI, first-run corridor, free-audit + owner report, landing, real-data scaffolding B5–B8, typed DEPLOY swaps — only the B6 field-mapping panel remains). **The headline** (recovered-SAR on a real clinic) is human-gated — see `docs/blocker.md` (needs B1 design-partner data + B2 real codes + B9 SME sign-off).
 
 Soft caveats:
 
@@ -169,7 +231,7 @@ docker compose down
   - Seams: `apps/web/lib/{db,auth,session,rbac,authz,audit,data,appeals-data}.ts`, `lib/actions/*` (server actions), `components/{ui,shell,charts,money,modules}`, `i18n/*`, `messages/{en,ar}.json`.
 - `test/synthetic-fhir` — deterministic R4 bundle generator (9 scenarios).
 - CI: `.github/workflows/ci.yml` (lint + typecheck + unit + integration w/ Postgres service + **`e2e` job** — Playwright + a11y against a seeded Postgres, EXECUTE A1).
-- `apps/web` **EXECUTE additions:** marketing landing at `/[locale]` for logged-out visitors (`components/marketing/landing.tsx`, A4); `playwright.config.ts` + `tests/e2e/*` (smoke/a11y/money-arc, A1); `lib/data.ts` uses `projectClaimFacts` + `selectRulesForClaim`; `lib/actions/recovery.ts` uses `resolveRecovery`; `lib/utils.ts` `cn()` teaches tailwind-merge the custom fontSize scale (app-wide hero-size fix). **AI-1 additions:** `lib/actions/explain-flag.ts` (server action → `@taweed/ai` `explainFlag`, re-derives prompt from `SCRUBBER_RULES`, RBAC-gated, catches `AiDisabledError` → deterministic); `components/modules/flag-explainer.tsx` (additive bilingual popover); `lib/data.ts` `ScrubRow` carries `ruleVersions`; `@taweed/ai` added to deps + `transpilePackages`; EN/AR scrubber i18n keys. **AI-2/AI-3 additions:** `components/modules/appeals-composer.tsx` (AI-2 "Suggest" panel), `components/modules/rule-authoring.tsx` + the authored-rule library (AI-3 Draft/Gate/Approve flow), Settings "Author" tab. **AI-4 additions:** `lib/actions/{eob-extract,eob-review}.ts` (upload entrypoint + approve/reject, approve re-validates arithmetic on edited values), `lib/eob-review-data.ts` + `lib/eob-to-normalized.ts`, `components/modules/eob-review-queue.tsx` + `components/modules/eob-review/{confidence-badge,eob-extraction-form}.tsx`, a second "Review queue" tab on the Ingest page; `next.config.mjs` gained `serverExternalPackages` + explicit webpack `externals` for `pdf-parse`/`pdfjs-dist`/`@napi-rs/canvas`'s native binary. `lib/chart-colors.ts` (new, 2026-07-08 design-audit fix — shared SVG-safe hex for Pareto/TrendLine, was duplicated in two files). **Not yet built (next pass): A2 first-run corridor, A3 free-audit + owner report, B6 field-mapping panel wired into the Ingest UI.**
+- `apps/web` **EXECUTE additions:** marketing landing at `/[locale]` for logged-out visitors (`components/marketing/landing.tsx`, A4); `playwright.config.ts` + `tests/e2e/*` (smoke/a11y/money-arc, A1); `lib/data.ts` uses `projectClaimFacts` + `selectRulesForClaim`; `lib/actions/recovery.ts` uses `resolveRecovery`; `lib/utils.ts` `cn()` teaches tailwind-merge the custom fontSize scale (app-wide hero-size fix). **AI-1 additions:** `lib/actions/explain-flag.ts` (server action → `@taweed/ai` `explainFlag`, re-derives prompt from `SCRUBBER_RULES`, RBAC-gated, catches `AiDisabledError` → deterministic); `components/modules/flag-explainer.tsx` (additive bilingual popover); `lib/data.ts` `ScrubRow` carries `ruleVersions`; `@taweed/ai` added to deps + `transpilePackages`; EN/AR scrubber i18n keys. **AI-2/AI-3 additions:** `components/modules/appeals-composer.tsx` (AI-2 "Suggest" panel), `components/modules/rule-authoring.tsx` + the authored-rule library (AI-3 Draft/Gate/Approve flow), Settings "Author" tab. **AI-4 additions:** `lib/actions/{eob-extract,eob-review}.ts` (upload entrypoint + approve/reject, approve re-validates arithmetic on edited values), `lib/eob-review-data.ts` + `lib/eob-to-normalized.ts`, `components/modules/eob-review-queue.tsx` + `components/modules/eob-review/{confidence-badge,eob-extraction-form}.tsx`, a second "Review queue" tab on the Ingest page; `next.config.mjs` gained `serverExternalPackages` + explicit webpack `externals` for `pdf-parse`/`pdfjs-dist`/`@napi-rs/canvas`'s native binary. `lib/chart-colors.ts` (new, 2026-07-08 design-audit fix — shared SVG-safe hex for Pareto/TrendLine, was duplicated in two files). **EXECUTE UI tail (A2/A3) additions, 2026-07-10:** `app/[locale]/(onboarding)/{layout,onboarding/page}.tsx` (chromeless first-run corridor route), `components/modules/onboarding-corridor.tsx`, `lib/onboarding.ts` (`isOnboarded`), `lib/actions/onboarding.ts` (`completeOnboarding`); `app/[locale]/(app)/analytics/audit-report/page.tsx` + `app/[locale]/(app)/recovery/owner-report/page.tsx`, `components/modules/{report-shell,audit-report-document,owner-report-document}.tsx`, `lib/report-data.ts` (`recoverableSplit`/`projectedRecoveryRange`/`aggregateTopPayers`), `lib/data.ts` gained `getAuditReportData`/`getOwnerReportData` + a shared `appealPipelineRows` helper (extracted from `getRecovery`); `components/modules/ingest-panel.tsx` gained an additive optional `onIngestSuccess` prop; `app/[locale]/(app)/layout.tsx` gained `print:hidden`/`print:` wrappers for the two new report pages. **Not yet built (independently pending): B6 field-mapping panel wired into the Ingest UI.**
 
 ## Must-read before building
 
@@ -197,7 +259,7 @@ IMPLEMENT:
 
 ## Git workflow & safety
 
-- **The app lives on `main` in this dir** (`~/Desktop/web apps/taweed`). IMPLEMENT was built in a worktree (`worktree-create-data-pipeline`, merged to `44e0e13` + deleted). The **EXECUTE buildable pass** was built on branch `execute-phase` and **merged to `main`**. **AI-4 (PROMPT 3)** was built in-place on branch `ai-phase-4` and has been **merged to local `main`** (merge commit `78b7801`, 2026-07-08). The 6-pass **audit sweep** (2026-07-08 through 2026-07-10) was committed directly on `main` in-place, 12 commits (6 fix + 6 docs-learnings pairs, plus one final audit.md polish commit). **None of this has been pushed to `origin`** as of this writing; local `main` is **12 commits ahead of `origin/main`** (last pushed tip still `9813fc6`, same as `back-up`). Push only after the user explicitly confirms — this repo's session rules treat the push + `back-up` ritual as a hard stop-and-confirm gate, not a silent step.
+- **The app lives on `main` in this dir** (`~/Desktop/web apps/taweed`). IMPLEMENT was built in a worktree (`worktree-create-data-pipeline`, merged to `44e0e13` + deleted). The **EXECUTE buildable pass** was built on branch `execute-phase` and **merged to `main`**. **AI-4 (PROMPT 3)** was built in-place on branch `ai-phase-4` and has been **merged to local `main`** (merge commit `78b7801`, 2026-07-08). The 6-pass **audit sweep** (2026-07-08 through 2026-07-10) was committed directly on `main` in-place, 12 commits (6 fix + 6 docs-learnings pairs, plus one final audit.md polish commit). **The EXECUTE UI tail (A2 + A3) is committed on branch `execute-ui-tail`** (commit `dcb4d70`, 2026-07-10, currently checked out in this dir) — **NOT yet merged to `main`, not yet pushed.** `main` itself is still at `62d0beb`, **12 commits ahead of `origin/main`** (last pushed tip still `9813fc6`, same as `back-up`). Merging `execute-ui-tail` into `main` and pushing both are the next actions, but only after the user explicitly confirms — this repo's session rules treat the merge + push + `back-up` ritual as a hard stop-and-confirm gate, not a silent step.
 - **Backup-branch rule — `back-up` is the pre-advance `main` tip (restore point).** Before any push that advances `main`, snapshot the current (soon-to-be-previous) **pushed** `main` tip onto `back-up`. As of this writing (before the AI-4 push), `back-up` = `2d0e1bb` (one behind the last-pushed `origin/main` tip `9813fc6`, per the prior session's hotfix push). Once AI-4 is pushed, `back-up` should become `9813fc6` (the pre-AI-4-push `origin/main` tip) and `main` carries AI-4.
 
   ```bash

@@ -60,7 +60,7 @@ export default async function OverviewPage({
       {/* Forward loop (peak-end): the last feeling is agency. */}
       <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
         <ForwardCard href="/scrubber" label={t("runScrubber")} />
-        <ForwardCard href="/recovery" label={t("buildReport")} />
+        <ForwardCard href="/recovery/owner-report" label={t("buildReport")} />
       </div>
     </div>
   );
