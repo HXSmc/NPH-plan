@@ -35,8 +35,15 @@ function buildLine(
 ): EobClaimLine {
   const billedHalalas = rng.int(5, 50) * 100;
   const denialCode = spec.denials[claimIdx]?.[lineIdx] ?? null;
+  // Gap 2 — only a non-denied line can carry a contractual write-off: a
+  // denied line's paidHalalas is already 0 and rejectedHalalas already
+  // absorbs the full billed amount, so there is nothing left for an
+  // adjustment to subtract from.
+  const adjustmentHalalas = denialCode ? 0 : (spec.adjustments[claimIdx]?.[lineIdx] ?? 0);
   const patientShareHalalas = denialCode ? 0 : Math.round(billedHalalas * 0.1);
-  const paidHalalas = denialCode ? 0 : billedHalalas - patientShareHalalas;
+  const paidHalalas = denialCode
+    ? 0
+    : billedHalalas - patientShareHalalas - adjustmentHalalas;
   const rejectedHalalas = denialCode ? billedHalalas : 0;
 
   return {
@@ -47,6 +54,7 @@ function buildLine(
     paidHalalas,
     patientShareHalalas,
     rejectedHalalas,
+    adjustmentHalalas,
     denialCode,
     confidence: draftConfidence(rng, spec.lowQualityScan),
   };
@@ -66,6 +74,7 @@ function buildClaim(
   const totalBilledHalalas = lines.reduce((sum, l) => sum + l.billedHalalas, 0);
   const totalPaidHalalas = lines.reduce((sum, l) => sum + l.paidHalalas, 0);
   const totalRejectedHalalas = lines.reduce((sum, l) => sum + l.rejectedHalalas, 0);
+  const totalAdjustmentHalalas = lines.reduce((sum, l) => sum + l.adjustmentHalalas, 0);
   return {
     claimId: `claim-${scenario}-${seed}-${claimIdx}`,
     nphiesClaimId: `NPHIES-CLM-${scenario}-${seed}-${claimIdx}`,
@@ -75,6 +84,7 @@ function buildClaim(
     totalBilledHalalas,
     totalPaidHalalas,
     totalRejectedHalalas,
+    totalAdjustmentHalalas,
     confidence: draftConfidence(rng, spec.lowQualityScan),
   };
 }
@@ -152,6 +162,7 @@ function buildTextLayer(spec: EobScenarioSpec, extraction: EobExtraction): strin
         `${isAr ? "المسدد" : "Paid"} ${sar(line.paidHalalas)}`,
         `${isAr ? "تحمل المريض" : "Patient Share"} ${sar(line.patientShareHalalas)}`,
         `${isAr ? "المرفوض" : "Rejected"} ${sar(line.rejectedHalalas)}`,
+        `${isAr ? "التسوية التعاقدية" : "Adjustment"} ${sar(line.adjustmentHalalas)}`,
       ];
       if (line.denialCode) {
         parts.push(`${isAr ? "سبب الرفض" : "Denial"} ${line.denialCode}`);
@@ -166,14 +177,25 @@ function buildTextLayer(spec: EobScenarioSpec, extraction: EobExtraction): strin
 
 /**
  * Builds a minimal, valid, bilingual (EN+AR) RTL-aware HTML document
- * representing the same remittance. This is a placeholder seam for a future
- * rasterization step (HTML -> PDF/PNG for real vision-model evals) — that
- * rasterization is explicitly NOT built this session.
- * TODO(ai-route): rasterize this HTML to PDF/PNG once the AI-4 vision
- * extraction route needs real image fixtures instead of text ground truth.
+ * representing the same remittance. This is the source `rasterize.ts`
+ * (Playwright headless Chromium) renders to PDF/PNG for the live vision-model
+ * eval (packages/ai/evals/extractEob.eval.ts) — rasterization now ships in
+ * this codebase; this is no longer a placeholder seam for a future step.
  */
 function buildHtmlTemplate(spec: EobScenarioSpec, extraction: EobExtraction): string {
-  const sar = (halalas: number): string => (halalas / 100).toFixed(2);
+  // MONEY-PATH / EVAL-FIDELITY FIX (code-review finding): this used to render
+  // sar()/date output as plain Western ASCII digits regardless of
+  // `spec.digitSet`, while buildTextLayer (above) already honored it via
+  // formatDigits. The live vision eval (packages/ai/evals/extractEob.eval.ts)
+  // rasterizes THIS template to PDF (rasterize.ts) and feeds that PDF to
+  // extractEob() — it never feeds textLayer — so the arabicHeavy/
+  // mixedDigitSets scenarios were presenting only Western numerals to the
+  // model, silently defeating the digit-diversity property the corpus exists
+  // to stress. `slot` mirrors buildTextLayer's alternation counter so "mixed"
+  // still guarantees both scripts appear.
+  let slot = 0;
+  const fmt = (value: number | string): string => formatDigits(value, spec.digitSet, slot++);
+  const sar = (halalas: number): string => fmt((halalas / 100).toFixed(2));
   const rows = extraction.claims
     .flatMap((claim) =>
       claim.lines.map(
@@ -187,6 +209,7 @@ function buildHtmlTemplate(spec: EobScenarioSpec, extraction: EobExtraction): st
           <td>${sar(line.paidHalalas)}</td>
           <td>${sar(line.patientShareHalalas)}</td>
           <td>${sar(line.rejectedHalalas)}</td>
+          <td>${sar(line.adjustmentHalalas)}</td>
           <td>${line.denialCode ?? ""}</td>
         </tr>`,
       ),
@@ -202,7 +225,7 @@ function buildHtmlTemplate(spec: EobScenarioSpec, extraction: EobExtraction): st
 <body>
   <h1>Remittance Advice / إشعار تسوية مطالبات</h1>
   <p>Payer / الدافع: ${extraction.payerName} (${extraction.payerNphiesId})</p>
-  <p>Remittance Date / تاريخ التسوية: ${extraction.remittanceDate}</p>
+  <p>Remittance Date / تاريخ التسوية: ${fmt(extraction.remittanceDate)}</p>
   <p>Total Paid / إجمالي المسدد: ${sar(extraction.remittanceTotalPaidHalalas)} SAR</p>
   <table>
     <thead>
@@ -215,6 +238,7 @@ function buildHtmlTemplate(spec: EobScenarioSpec, extraction: EobExtraction): st
         <th>Paid / المسدد</th>
         <th>Patient Share / تحمل المريض</th>
         <th>Rejected / المرفوض</th>
+        <th>Adjustment / التسوية التعاقدية</th>
         <th>Denial / الرفض</th>
       </tr>
     </thead>

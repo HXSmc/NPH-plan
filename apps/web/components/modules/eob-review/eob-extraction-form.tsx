@@ -20,13 +20,27 @@ import { ConfidenceBadge } from "./confidence-badge";
 // to halalas ONLY by the server action (@taweed/analytics is a server-only
 // dependency chain and must never enter this client bundle) — this file's own
 // halalas->SAR conversion is display-only and intentionally duplicated rather
-// than imported, and assumes non-negative amounts (always true for a remittance
-// line: billed/paid/patient-share/rejected are never negative).
+// than imported.
+//
+// MONEY-PATH FIX (adversarial-review finding, extra-scrutiny pass): this used
+// to `Math.max(0, ...)`-clamp any negative halalas to "0.00", on the (stated
+// but incorrect) assumption that every one of the nine SAR fields it renders
+// is always non-negative. adjustmentHalalas can legitimately be extracted as
+// negative by a hallucinating model (see eob-validators.ts's
+// nonNegativeAdjustmentFinding, added in this same fix pass) — clamping it to
+// "0.00" silently discarded the real extracted value from the reviewer's
+// view, hiding exactly the anomaly this dedicated review surface exists to
+// catch, and produced an inexplicable "inconsistent" rejection on Approve
+// once the clamped zero broke the server's re-check. This now mirrors
+// @taweed/analytics's own toSar sign handling so the reviewer sees the true
+// (possibly negative) extracted value.
 function halalasToSarDisplay(halalas: number): string {
-  const rounded = Math.max(0, Math.round(halalas));
-  const sar = Math.floor(rounded / 100);
-  const rem = rounded % 100;
-  return `${sar}.${rem.toString().padStart(2, "0")}`;
+  const rounded = Math.round(halalas);
+  const negative = rounded < 0;
+  const abs = Math.abs(rounded);
+  const sar = Math.floor(abs / 100);
+  const rem = abs % 100;
+  return `${negative ? "-" : ""}${sar}.${rem.toString().padStart(2, "0")}`;
 }
 
 // `validatorReport` is stored as opaque jsonb (packages/ai never enters this
@@ -64,6 +78,7 @@ function toEditedInput(extraction: EobExtraction): EditedEobExtractionInput {
       totalBilledSar: halalasToSarDisplay(c.totalBilledHalalas),
       totalPaidSar: halalasToSarDisplay(c.totalPaidHalalas),
       totalRejectedSar: halalasToSarDisplay(c.totalRejectedHalalas),
+      totalAdjustmentSar: halalasToSarDisplay(c.totalAdjustmentHalalas),
       lines: c.lines.map((l) => ({
         claimLineRef: l.claimLineRef,
         sbsCode: l.sbsCode,
@@ -74,6 +89,7 @@ function toEditedInput(extraction: EobExtraction): EditedEobExtractionInput {
         paidSar: halalasToSarDisplay(l.paidHalalas),
         patientShareSar: halalasToSarDisplay(l.patientShareHalalas),
         rejectedSar: halalasToSarDisplay(l.rejectedHalalas),
+        adjustmentSar: halalasToSarDisplay(l.adjustmentHalalas),
       })),
     })),
   };
@@ -349,6 +365,13 @@ export function EobExtractionForm({
                 label={t("totalRejected")}
               />
             </Field>
+            <Field label={t("totalAdjustment")}>
+              <MoneyField
+                value={claim.totalAdjustmentSar}
+                onChange={(v) => updateClaim(ci, { totalAdjustmentSar: v })}
+                label={t("totalAdjustment")}
+              />
+            </Field>
           </div>
 
           <TableWrap className="mt-4">
@@ -362,6 +385,7 @@ export function EobExtractionForm({
                   <TH className="text-end">{t("paid")}</TH>
                   <TH className="text-end">{t("patientShare")}</TH>
                   <TH className="text-end">{t("rejected")}</TH>
+                  <TH className="text-end">{t("adjustment")}</TH>
                   <TH>{t("denialCode")}</TH>
                   <TH>{t("confidence")}</TH>
                 </TR>
@@ -416,6 +440,13 @@ export function EobExtractionForm({
                         value={line.rejectedSar}
                         onChange={(v) => updateLine(ci, li, { rejectedSar: v })}
                         label={t("rejected")}
+                      />
+                    </TD>
+                    <TD className="w-24">
+                      <MoneyField
+                        value={line.adjustmentSar}
+                        onChange={(v) => updateLine(ci, li, { adjustmentSar: v })}
+                        label={t("adjustment")}
                       />
                     </TD>
                     <TD className="w-40">

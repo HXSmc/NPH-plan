@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { toSar } from "@taweed/analytics";
-import { validateEobExtraction } from "../src/eob-validators.js";
+import {
+  validateEobExtraction,
+  validateEobExtractionArithmetic,
+} from "../src/eob-validators.js";
 import type { EobExtraction } from "../src/schemas/eobExtraction.js";
 
 // A clean, internally-consistent extraction: every cross-total identity holds
@@ -27,6 +30,7 @@ const CLEAN_EXTRACTION: EobExtraction = {
           paidHalalas: 1890,
           patientShareHalalas: 210,
           rejectedHalalas: 0,
+          adjustmentHalalas: 0,
           denialCode: null,
           confidence: 0.89,
         },
@@ -38,6 +42,7 @@ const CLEAN_EXTRACTION: EobExtraction = {
           paidHalalas: 0,
           patientShareHalalas: 0,
           rejectedHalalas: 4100,
+          adjustmentHalalas: 0,
           denialCode: "TWD-D03",
           confidence: 0.9,
         },
@@ -49,6 +54,7 @@ const CLEAN_EXTRACTION: EobExtraction = {
           paidHalalas: 1710,
           patientShareHalalas: 190,
           rejectedHalalas: 0,
+          adjustmentHalalas: 0,
           denialCode: null,
           confidence: 0.96,
         },
@@ -56,6 +62,7 @@ const CLEAN_EXTRACTION: EobExtraction = {
       totalBilledHalalas: 8100,
       totalPaidHalalas: 3600,
       totalRejectedHalalas: 4100,
+      totalAdjustmentHalalas: 0,
       confidence: 0.94,
     },
   ],
@@ -199,6 +206,334 @@ describe("validateEobExtraction — verbatim text-layer match", () => {
     const report = validateEobExtraction(clone(CLEAN_EXTRACTION), arabicText);
     const textFindings = report.findings.filter((f) => f.check === "text-layer-match");
     expect(textFindings.every((f) => f.passed)).toBe(true);
+  });
+});
+
+// Gap 2 — the 5th "adjustment/withholding" money bucket. A contractual
+// write-off is money that is neither paid, patient-owed, nor formally
+// rejected/denied — without this bucket, a real remittance carrying one can
+// never cross-total and is permanently stuck failing the arithmetic gate
+// even when every extracted value is accurate. Exercises BOTH
+// validateEobExtraction (the full report, including the text-layer-match
+// candidate added for this field) and validateEobExtractionArithmetic (the
+// no-text-layer variant approveEobExtractionAction actually re-runs on a
+// human-edited payload).
+describe("validateEobExtraction / validateEobExtractionArithmetic — adjustment (5th) bucket", () => {
+  it("passes when billed == paid+rejected+patientShare+adjustment (a genuine contractual write-off)", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    // Move 100 halalas out of "paid" and into "adjustment" on line-0-0 — the
+    // line still balances (2100 == 1790+0+210+100), just with a 5th term.
+    e.claims[0]!.lines[0]!.paidHalalas = 1790;
+    e.claims[0]!.lines[0]!.adjustmentHalalas = 100;
+    e.claims[0]!.totalPaidHalalas -= 100;
+    e.claims[0]!.totalAdjustmentHalalas = 100;
+    e.remittanceTotalPaidHalalas -= 100; // validateEobExtractionArithmetic still
+    // checks the remittance-level cross-total (unchanged by this gap — see
+    // eob-validators.ts's remittanceTotalFinding comment), so it must move
+    // too, or this positive case would spuriously fail on an unrelated check.
+    const report = validateEobExtractionArithmetic(e);
+    expect(report.passed).toBe(true);
+  });
+
+  it("fails (line-total) when a line's adjustment is set but billed != paid+rejected+patientShare+adjustment", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    // adjustment added on top WITHOUT reducing paid — billed 2100 !=
+    // 1890+0+210+50 (=2150). A too-permissive 5-bucket validator would let
+    // this slide; it must still fail.
+    e.claims[0]!.lines[0]!.adjustmentHalalas = 50;
+    const report = validateEobExtractionArithmetic(e);
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(failing.some((f) => f.check === "line-total")).toBe(true);
+  });
+
+  it("fails (claim-total) when totalAdjustmentHalalas doesn't match the sum of line adjustments", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    e.claims[0]!.lines[0]!.paidHalalas = 1790;
+    e.claims[0]!.lines[0]!.adjustmentHalalas = 100; // line balances on its own
+    e.claims[0]!.totalPaidHalalas -= 100;
+    e.claims[0]!.totalAdjustmentHalalas = 999; // wrong — should be 100
+    e.remittanceTotalPaidHalalas -= 100; // keep remittance-total consistent
+    // so the ONLY failing check is the claim-total mismatch under test.
+    const report = validateEobExtractionArithmetic(e);
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(failing.some((f) => f.check === "claim-total")).toBe(true);
+    expect(failing.every((f) => f.check === "claim-total")).toBe(true);
+  });
+
+  it("fails when an adjustment amount in the extraction is missing from the text layer", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    // Move 733 halalas (7.33 SAR — distinctive, no substring collision with
+    // any amount already present in CLEAN_TEXT_LAYER) out of "paid" and into
+    // "adjustment" on line-0-0. Every cross-total identity stays intact (see
+    // the totals recomputed below), so ONLY the text-match checks for the
+    // (now-different) paid/adjustment amounts can fail — mirrors the existing
+    // "billed amount missing" test's approach.
+    e.claims[0]!.lines[0]!.paidHalalas = 1890 - 733;
+    e.claims[0]!.lines[0]!.adjustmentHalalas = 733;
+    e.claims[0]!.totalPaidHalalas -= 733;
+    e.claims[0]!.totalAdjustmentHalalas = 733;
+    e.remittanceTotalPaidHalalas -= 733;
+    const report = validateEobExtraction(e, CLEAN_TEXT_LAYER);
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter(
+      (f) => !f.passed && f.check === "text-layer-match",
+    );
+    expect(
+      failing.some((f) => f.detail.includes("adjustmentHalalas")),
+    ).toBe(true);
+  });
+});
+
+// MONEY-PATH EXTRA-SCRUTINY REGRESSION — adversarial finding (eob-validators.ts):
+// the cross-total checks are pure sign-blind linear identities, so a
+// hallucinated NEGATIVE adjustmentHalalas can mask an impossible paid>billed
+// state as passed:true, and validateEobExtractionArithmetic (the ONLY check
+// run for scanned PDFs with no text layer, and the same re-check
+// approveEobExtractionAction runs on a human-edited payload) had zero
+// text-layer-match findings to catch it. Fixed by nonNegativeMoneyFinding
+// (originally nonNegativeAdjustmentFinding; generalized below — the
+// "non-negative-money" check name reflects that generalization).
+describe("validateEobExtraction / validateEobExtractionArithmetic — adjustment non-negativity (money-path fix)", () => {
+  it("fails a line whose negative adjustment sign-cancels an impossible paid>billed relationship", () => {
+    // Exact scenario from the adversarial finding: billed=500, paid=700,
+    // rejected=0, patientShare=0, adjustment=-200. Every pure cross-total sum
+    // (700+0+0-200=500) balances despite paid genuinely exceeding billed —
+    // before the fix this reported passed:true.
+    const e = clone(CLEAN_EXTRACTION);
+    e.claims[0]!.lines[0]!.billedHalalas = 50000;
+    e.claims[0]!.lines[0]!.paidHalalas = 70000;
+    e.claims[0]!.lines[0]!.rejectedHalalas = 0;
+    e.claims[0]!.lines[0]!.patientShareHalalas = 0;
+    e.claims[0]!.lines[0]!.adjustmentHalalas = -20000;
+    // Keep the OTHER two lines and the claim/remittance totals consistent
+    // with this single line's new values so only the adjustment sign is
+    // under test, not an unrelated cross-total mismatch.
+    e.claims[0]!.lines = [e.claims[0]!.lines[0]!];
+    e.claims[0]!.totalBilledHalalas = 50000;
+    e.claims[0]!.totalPaidHalalas = 70000;
+    e.claims[0]!.totalRejectedHalalas = 0;
+    e.claims[0]!.totalAdjustmentHalalas = -20000;
+    e.remittanceTotalPaidHalalas = 70000;
+
+    const report = validateEobExtractionArithmetic(e);
+    // The line/claim/remittance cross-total checks still all pass — proving
+    // the masking actually works at the arithmetic layer.
+    const crossTotalChecks = report.findings.filter((f) =>
+      ["line-total", "claim-total", "remittance-total"].includes(f.check),
+    );
+    expect(crossTotalChecks.every((f) => f.passed)).toBe(true);
+    // But the new non-negativity guard catches it, so the overall report
+    // must never report passed:true for this payload.
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(failing.some((f) => f.check === "non-negative-money")).toBe(true);
+  });
+
+  it("fails when totalAdjustmentHalalas is negative at the claim level", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    e.claims[0]!.totalAdjustmentHalalas = -1;
+    const report = validateEobExtractionArithmetic(e);
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(
+      failing.some(
+        (f) => f.check === "non-negative-money" && f.detail.includes(e.claims[0]!.claimId),
+      ),
+    ).toBe(true);
+  });
+
+  it("passes a genuinely non-negative adjustment (no false positive)", () => {
+    const report = validateEobExtractionArithmetic(clone(CLEAN_EXTRACTION));
+    const failing = report.findings.filter(
+      (f) => !f.passed && f.check === "non-negative-money",
+    );
+    expect(failing.length).toBe(0);
+  });
+});
+
+// MONEY-PATH EXTRA-SCRUTINY REGRESSION — adversarial re-review findings
+// (eob-validators.ts): the non-negativity guard above, in its first form,
+// covered ONLY adjustmentHalalas. But billedHalalas, paidHalalas,
+// patientShareHalalas, and rejectedHalalas remained plain unsigned-unchecked
+// z.number() fields, so the IDENTICAL sign-cancellation exploit the guard
+// was written to close was still open via any of the other four buckets —
+// at the line, claim-total, and remittance-total levels. Fixed by
+// generalizing nonNegativeAdjustmentFinding into nonNegativeMoneyFinding /
+// lineNonNegativityFindings / claimNonNegativityFindings, applied to all
+// five line-level buckets, all four claim-level totals, and the
+// remittance-level total.
+describe("validateEobExtraction / validateEobExtractionArithmetic — non-adjustment bucket non-negativity (money-path fix, extra-scrutiny pass #2)", () => {
+  it("fails a line whose negative rejectedHalalas sign-cancels an impossible paid>billed relationship", () => {
+    // Exact scenario from the adversarial finding: billed=50000, paid=70000
+    // (paid > billed — physically impossible for a remittance),
+    // rejected=-20000 (a negative "rejection"), patientShare=0,
+    // adjustment=0. Every pure cross-total sum (70000-20000+0+0=50000)
+    // balances despite paid genuinely exceeding billed — before this fix
+    // this reported passed:true, since only adjustmentHalalas was guarded.
+    const e = clone(CLEAN_EXTRACTION);
+    e.claims[0]!.lines[0]!.billedHalalas = 50000;
+    e.claims[0]!.lines[0]!.paidHalalas = 70000;
+    e.claims[0]!.lines[0]!.rejectedHalalas = -20000;
+    e.claims[0]!.lines[0]!.patientShareHalalas = 0;
+    e.claims[0]!.lines[0]!.adjustmentHalalas = 0;
+    e.claims[0]!.lines = [e.claims[0]!.lines[0]!];
+    e.claims[0]!.totalBilledHalalas = 50000;
+    e.claims[0]!.totalPaidHalalas = 70000;
+    e.claims[0]!.totalRejectedHalalas = -20000;
+    e.claims[0]!.totalAdjustmentHalalas = 0;
+    e.remittanceTotalPaidHalalas = 70000;
+
+    const report = validateEobExtractionArithmetic(e);
+    // The line/claim/remittance cross-total checks still all pass — proving
+    // the masking actually works at the arithmetic layer via a bucket the
+    // first-pass fix did not guard.
+    const crossTotalChecks = report.findings.filter((f) =>
+      ["line-total", "claim-total", "remittance-total"].includes(f.check),
+    );
+    expect(crossTotalChecks.every((f) => f.passed)).toBe(true);
+    // But the generalized non-negativity guard now catches it.
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(
+      failing.some(
+        (f) => f.check === "non-negative-money" && f.detail.includes("rejectedHalalas"),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "billedHalalas",
+    "paidHalalas",
+    "patientShareHalalas",
+    "rejectedHalalas",
+  ] as const)("fails when line-level %s is negative", (field) => {
+    const e = clone(CLEAN_EXTRACTION);
+    (e.claims[0]!.lines[0] as unknown as Record<string, number>)[field] = -1;
+    const report = validateEobExtractionArithmetic(e);
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(
+      failing.some((f) => f.check === "non-negative-money" && f.detail.includes(field)),
+    ).toBe(true);
+  });
+
+  it.each(["totalBilledHalalas", "totalPaidHalalas", "totalRejectedHalalas"] as const)(
+    "fails when claim-level %s is negative",
+    (field) => {
+      const e = clone(CLEAN_EXTRACTION);
+      (e.claims[0] as unknown as Record<string, number>)[field] = -1;
+      const report = validateEobExtractionArithmetic(e);
+      expect(report.passed).toBe(false);
+      const failing = report.findings.filter((f) => !f.passed);
+      expect(
+        failing.some(
+          (f) =>
+            f.check === "non-negative-money" &&
+            f.detail.includes(field) &&
+            f.detail.includes(e.claims[0]!.claimId),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("fails when remittanceTotalPaidHalalas is negative", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    e.remittanceTotalPaidHalalas = -1;
+    const report = validateEobExtractionArithmetic(e);
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(
+      failing.some(
+        (f) => f.check === "non-negative-money" && f.detail.includes("remittanceTotalPaidHalalas"),
+      ),
+    ).toBe(true);
+  });
+
+  it("passes ordinary non-negative buckets across all fields (no false positive)", () => {
+    const report = validateEobExtractionArithmetic(clone(CLEAN_EXTRACTION));
+    const failing = report.findings.filter(
+      (f) => !f.passed && f.check === "non-negative-money",
+    );
+    expect(failing.length).toBe(0);
+  });
+});
+
+// MONEY-PATH EXTRA-SCRUTINY REGRESSION — adversarial finding (eob-validators.ts):
+// the `===` cross-total checks compare raw float64 halalas with no magnitude
+// bound anywhere in the money path, so two genuinely different SAR amounts
+// can collide once they exceed 2^53 halalas and still report passed:true.
+// Fixed by withinMagnitudeFinding / MAX_HALALAS_MAGNITUDE.
+describe("validateEobExtractionArithmetic — money-magnitude bound (money-path fix)", () => {
+  it("fails when a claim total exceeds the numeric(14,2) precision-safe range and float64-collides with its own line sum", () => {
+    // paidSar "90071992547409920.00" and totalPaidSar
+    // "90071992547409921.00" (genuinely 1 SAR apart) both convert to the
+    // SAME float64 halalas value once they exceed 2^53 — reproduced directly
+    // in halalas here since this module operates on the wire (halalas)
+    // shape, same magnitude the adversarial finding demonstrated via
+    // moneyToHalalas.
+    const collidedHalalas = 9_007_199_254_740_992_000; // beyond 2^53
+    const e = clone(CLEAN_EXTRACTION);
+    e.claims[0]!.lines = [
+      {
+        ...e.claims[0]!.lines[0]!,
+        billedHalalas: collidedHalalas,
+        paidHalalas: collidedHalalas,
+        rejectedHalalas: 0,
+        patientShareHalalas: 0,
+        adjustmentHalalas: 0,
+      },
+    ];
+    e.claims[0]!.totalBilledHalalas = collidedHalalas;
+    e.claims[0]!.totalPaidHalalas = collidedHalalas;
+    e.claims[0]!.totalRejectedHalalas = 0;
+    e.claims[0]!.totalAdjustmentHalalas = 0;
+    e.remittanceTotalPaidHalalas = collidedHalalas;
+
+    const report = validateEobExtractionArithmetic(e);
+    // Confirms the collision is real: the cross-total identity itself
+    // reports passed:true at this magnitude.
+    const claimTotalChecks = report.findings.filter((f) => f.check === "claim-total");
+    expect(claimTotalChecks.every((f) => f.passed)).toBe(true);
+    // The new magnitude guard must still flag the overall report as failing.
+    expect(report.passed).toBe(false);
+    const failing = report.findings.filter((f) => !f.passed);
+    expect(failing.some((f) => f.check === "money-magnitude-bound")).toBe(true);
+  });
+
+  it("does not flag a value at the exact numeric(14,2) capacity (no false positive at the boundary)", () => {
+    const e = clone(CLEAN_EXTRACTION);
+    const atCapacity = 99_999_999_999_999; // 999999999999.99 SAR
+    e.claims[0]!.lines = [
+      {
+        ...e.claims[0]!.lines[0]!,
+        billedHalalas: atCapacity,
+        paidHalalas: atCapacity,
+        rejectedHalalas: 0,
+        patientShareHalalas: 0,
+        adjustmentHalalas: 0,
+      },
+    ];
+    e.claims[0]!.totalBilledHalalas = atCapacity;
+    e.claims[0]!.totalPaidHalalas = atCapacity;
+    e.claims[0]!.totalRejectedHalalas = 0;
+    e.claims[0]!.totalAdjustmentHalalas = 0;
+    e.remittanceTotalPaidHalalas = atCapacity;
+
+    const report = validateEobExtractionArithmetic(e);
+    const failing = report.findings.filter(
+      (f) => !f.passed && f.check === "money-magnitude-bound",
+    );
+    expect(failing.length).toBe(0);
+  });
+
+  it("passes ordinary small amounts (no false positive)", () => {
+    const report = validateEobExtractionArithmetic(clone(CLEAN_EXTRACTION));
+    const failing = report.findings.filter(
+      (f) => !f.passed && f.check === "money-magnitude-bound",
+    );
+    expect(failing.length).toBe(0);
   });
 });
 
