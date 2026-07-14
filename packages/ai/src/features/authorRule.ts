@@ -1,16 +1,13 @@
 import "server-only";
-import { withTenant, type Pool } from "@taweed/db";
+import type { Pool } from "@taweed/db";
 import {
   AUTHORABLE_FACT_KEYS,
   SCRUB_OPERATORS,
   type AuthoredRuleScope,
 } from "@taweed/rules-engine";
-import { AiConfigError, AiDisabledError } from "../errors.js";
-import { isFeatureEnabled, missingProviderConfig } from "../config.js";
 import { normalizeArabicOutput } from "../postprocess-ar.js";
 import { sha256Hex } from "../sha256.js";
-import { runStructured, isTenantAiEnabled } from "../run.js";
-import { createAnthropicProvider } from "../anthropic-1p.js";
+import { runStructured, resolveAiGate } from "../run.js";
 import type { LlmProvider } from "../provider.js";
 import {
   ScrubRuleDraftSchema,
@@ -137,21 +134,13 @@ export async function authorRule(
 ): Promise<AuthorRuleResult> {
   const env = opts.env ?? process.env;
 
-  if (!isFeatureEnabled("authorRule", env)) {
-    throw new AiDisabledError("feature 'authorRule' is disabled");
-  }
-
-  // Per-tenant kill switch (short txn; no txn held across the model call).
-  const tenantOk = await withTenant(opts.pool, opts.tenantId, (db) =>
-    isTenantAiEnabled(db),
-  );
-  if (!tenantOk) throw new AiDisabledError("tenant AI flag is off");
-
-  if (opts.provider === undefined) {
-    const missing = missingProviderConfig(env);
-    if (missing) throw new AiConfigError(missing);
-  }
-  const provider = opts.provider ?? createAnthropicProvider();
+  const provider = await resolveAiGate({
+    feature: "authorRule",
+    env,
+    pool: opts.pool,
+    tenantId: opts.tenantId,
+    provider: opts.provider,
+  });
 
   const system = SYSTEM_PROMPT;
   const user = buildUserPrompt(opts.input);

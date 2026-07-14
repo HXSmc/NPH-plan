@@ -2,8 +2,70 @@ import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
+const isDev = process.env.NODE_ENV === "development";
+
+// Static (non-nonce) CSP, per Next.js's own documented "Without Nonces"
+// pattern (next.config.js headers()) — see
+// https://nextjs.org/docs/app/guides/content-security-policy#without-nonces.
+// A nonce-based CSP is stricter on script-src but forces every route into
+// dynamic rendering (kills SSG/ISR/PPR) and requires per-request nonce
+// plumbing through middleware.ts + every layout — out of scope for this
+// header-hardening pass. `script-src 'unsafe-inline'` is required here
+// because: (1) this layout renders a genuine inline `<script>` (the
+// pre-hydration dark/light theme-init snippet in
+// app/[locale]/layout.tsx, needed to avoid a flash of the wrong theme),
+// and (2) Next.js's own App Router runtime streams hydration/RSC payload
+// data via inline `<script>` tags whose content is per-render and cannot
+// be hashed statically. `style-src 'unsafe-inline'` is required for
+// Next's inline style injection (App Router streaming + any CSS-in-JS).
+// `'unsafe-eval'` is added in development only — React's dev-mode error
+// stack reconstruction uses `eval`; neither React nor Next use it in
+// production builds.
+const cspHeader = `
+  default-src 'self';
+  script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""};
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' blob: data:;
+  font-src 'self';
+  connect-src 'self';
+  object-src 'none';
+  base-uri 'self';
+  form-action 'self';
+  frame-ancestors 'none';
+  upgrade-insecure-requests;
+`;
+
+// Security response headers applied to every route. Exported separately so
+// it can be unit-tested without importing this ESM config file (which pulls
+// in next-intl/plugin) — see test/next-config-security-headers.test.ts.
+export const securityHeaders = [
+  {
+    key: "Content-Security-Policy",
+    value: cspHeader.replace(/\s{2,}/g, " ").trim(),
+  },
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=31536000; includeSubDomains; preload",
+  },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=()",
+  },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: securityHeaders,
+      },
+    ];
+  },
   reactStrictMode: true,
   // Workspace packages export raw TypeScript (./src/index.ts); Next must transpile them.
   transpilePackages: [

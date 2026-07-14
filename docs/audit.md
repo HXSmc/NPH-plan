@@ -13,13 +13,50 @@
 | 3 | API/server-action auth-check audit | 2026-07-08 | (fixed inline, no dedicated doc) | 15 missing-auth-check findings, all fixed | typecheck/lint/tests green |
 | 4 | Dependency audit (CVEs, abandonment, license) | 2026-07-08 | `docs/deps.md` | 10 advisories → 0; several floor-hygiene + watch-items | unit/int green, build green |
 | 5 | WCAG AA accessibility audit | 2026-07-09/10 | `docs/a11y.md` | 25 confirmed and fixed | unit 668/668, int 42/42, build green |
-| 6 | Codebase minimap (subsystems/connections/weaknesses) | 2026-07-10 | `docs/minimap.md` (gitignored, local-only) | 14 of 30 candidates confirmed+fixed, 16 deferred | unit 708/708, int 42/42, build green |
+| 6 | Codebase minimap (subsystems/connections/weaknesses) | 2026-07-10 (~02:18) | `docs/minimap.md` (gitignored, local-only) | 14 of 30 candidates confirmed+fixed, 16 deferred | unit 708/708, int 42/42, build green |
+| 7 | **Incremental re-run: bug hunt** | 2026-07-10 (~20:00) | `bugs.md` (**repo root, gitignored** — see convention-conflict note below) | 10 confirmed, 1 refuted (of 11) | unit 919/919, root+web typecheck green |
+| 8 | **Incremental re-run: security** | 2026-07-10 (~21:56) | `secure.md` (**repo root, gitignored**) | 3 confirmed, 2 refuted (of 5) | unit 928/928, prod build green |
+| 9 | **Incremental re-run: API/server-action auth-check** | 2026-07-10 (~22:33) | (no dedicated file — 0 findings) | 0 findings across all 22 entrypoints (prior sweep's 15 fixes hold, no regressions) | — |
+| 10 | **Incremental re-run: dependency audit** | 2026-07-10 (~22:33) | (no dedicated file) | 0 CVEs (807 deps); 15 safe patch/minor bumps applied; 14 majors + next-auth governance risk flagged | unit 933/933, typecheck green |
+| 11 | **Incremental re-run: WCAG AA** | 2026-07-10 (~23:00) | `docs/a11y.md` (updated in place, findings #23-24) | 2 confirmed+fixed; both prior "Considered" loose ends closed clean via live re-check | unit 933/933, typecheck green |
+| 12 | **Incremental re-run: codebase minimap** | 2026-07-10/11 (~23:30) | `docs/minimap.md` (overwritten — superseded pass #6's stale snapshot) | 24 weaknesses found (9 fixed safe-tier, incl. a re-dispatched agent + 2 follow-up fixes; 15 flagged for planning) | unit 977+/977+, typecheck green |
 
-All 6 passes used the same core method: parallel finder/mapper agents by area → each candidate
+**Passes #7-#12 (2026-07-10 evening / 2026-07-11) are an incremental re-run, not a redundant one.**
+They ran *after* the same day's AI-4 real-data-gaps and EXECUTE-UI-tail work landed (~07:50+,
+*after* pass #6's ~02:18 snapshot) — genuinely new code (onboarding corridor, audit-report/
+owner-report pages, eob-review approve flow) that passes #1-#6 never saw. Every overlapping-file
+finding was cross-checked against the committed `docs/bugs.md`/`docs/secure.md` before write-up to
+confirm it's a **complementary refinement** of an already-fixed issue, not a duplicate or a
+conflict (e.g. pass #7's `recovery.ts` TOCTOU race is a race condition *in* the sibling-aware
+ceiling logic pass #1 added — see `docs/bugs.md` #15 vs. this session's `bugs.md` #6; pass #7's
+`parse.ts` fullUrl-leak finding is a residual gap in the id-collision detector pass #1's `bugs.md`
+#13 added). Pass #9 (0 findings) is a *positive* confirmation, not a gap — it's exactly what you'd
+expect from re-scanning code whose auth gaps a prior pass (#3) already closed.
+
+**Convention conflict — flagged for a human decision, not resolved unilaterally:** passes #1-#6
+followed this repo's established convention of committing findings docs (`docs/bugs.md`,
+`docs/secure.md` tracked in git, per the §Conventions section below). Passes #7-#8's queuing
+instructions said "(ignore all .md in git)" for the bug-hunt/minimap tasks specifically; the
+session that ran them read this as "exclude `*.md` files from the audit *scope*" (consistent with
+task 6's separate, explicit "(ignore in git)" instruction for the minimap specifically — if task
+7's queue meant "gitignore the output" too, why say it differently and only for the minimap?) but
+erred toward the safer reading and gitignored `bugs.md`/`secure.md` at the repo root instead of
+appending to the tracked `docs/` versions. **Net effect: two parallel sets of findings docs exist**
+— `docs/bugs.md`/`docs/secure.md` (tracked, passes #1-#2) and root `bugs.md`/`secure.md`
+(gitignored, passes #7-#8). Recommend: fold the root files' *new* findings into the tracked
+`docs/` versions (as new numbered entries continuing each file's sequence) next time this runbook
+is used, then delete the root copies — but that's a decision for whoever's driving the next pass,
+not something this pass did unprompted to already-committed history.
+
+All passes used the same core method: parallel finder/mapper agents by area → each candidate
 adversarially re-verified by an independent agent (default-to-refute) → every CONFIRMED finding
-fixed with a regression test → full typecheck+lint+unit+integration+build re-run before commit.
-Passes #1-#5 are committed to git (`docs/*.md` + the code fixes); #6's `minimap.md` is intentionally
-local-only (see its own file header) but its 14 code fixes are committed like the others.
+fixed with a regression test (or, for money/PHI-path findings — see the money-path policy note
+added in §Learnings below — reported + a `test.fails()` regression test only, gated for human
+sign-off) → full typecheck+lint+unit+build re-run before calling it done. Passes #1-#5 are
+committed to git (`docs/*.md` + the code fixes); #6/#12's `minimap.md` is intentionally local-only
+(see its own file header) but its code fixes are committed like the others. Passes #7-#8's `bugs.md`/
+`secure.md` are local-only per the convention-conflict note above; their code fixes are NOT yet
+committed as of this writing (push/commit is user-gated, same as every other pass).
 
 ## Repo shape (so a finder agent doesn't have to rediscover it)
 
@@ -62,10 +99,14 @@ local-only (see its own file header) but its 14 code fixes are committed like th
   `vitest run --reporter=json --outputFile <path>` (JSON, not summarized), or `tsc ... 2>file`.
 - **Env vars don't reliably reach RTK's re-exec'd child** — prefix with `env VAR=val <cmd>`.
 - **pnpm lives at `~/.local/bin/pnpm`**, not on PATH.
-- **Node is v20.2.0** — below Next 16's floor (intentionally pinned to Next 15) and blocks local
-  Playwright/chrome-devtools driving. Any a11y/visual audit that needs a live browser must rely on
-  CI E2E+a11y, or do a code-level pass only and say so explicitly — don't claim a visual check that
-  didn't happen.
+- **Node is v20.2.0** — below Next 16's floor (intentionally pinned to Next 15), which blocks this
+  repo's own local `node_modules/playwright` binary. **This does NOT block `mcp__chrome-devtools__*`
+  tools** — they're a separate, externally-driven browser connection and work fine (confirmed twice
+  now: 2026-07-08's auth-check pass, and 2026-07-10/11's incremental a11y pass, which drove real
+  navigation + clicks + axe-core injection against a `pnpm --filter @taweed/web dev` server started
+  on a spare port). Use chrome-devtools MCP for any a11y/visual audit that needs a live browser;
+  reserve "code-level pass only, say so explicitly" for when chrome-devtools MCP itself is
+  unavailable, not for this Node-version reason.
 - **Docker `docker info`/`ps`/`exec` can hang on this host**; the Postgres container and port work
   fine regardless — probe with `nc -z localhost 5432` instead of trusting `docker compose ps`.
 - **Integration tests are destructive** (`pnpm test:int` wipes + re-migrates the shared local DB) —
@@ -82,6 +123,85 @@ local-only (see its own file header) but its 14 code fixes are committed like th
   §Learnings section after every audit run, not just at the very end of a queued batch.
 
 ## Learnings (append after each pass — newest on top)
+
+### Incremental full-queue re-run, all 6 pass types (2026-07-10 evening – 2026-07-11)
+
+- **Check for this file BEFORE assuming none exists — a naive shell one-liner can hide it.** This
+  session's very first repo-state check chained `ls audit.md docs/audit.md 2>/dev/null && find . 
+  -iname "audit.md" ...` with `&&`. Neither `audit.md` nor `docs/audit.md` existed *yet* at that
+  exact moment relative to the check's assumption, so `ls` exited non-zero and the `&&`-chained
+  `find` never ran — producing a false "nothing found" that carried through 6 tasks before this
+  file was actually discovered (via an unrelated stale `docs/minimap.md` read triggering a "file
+  not read yet" error that prompted a second look). **Never chain a discovery `find`/`grep` behind
+  a `&&` after a probe that can legitimately fail — run it unconditionally, or check the exit code
+  explicitly before trusting an empty result.** This is the single most expensive mistake of this
+  pass: ~5 of 6 tasks re-audited ground a git-tracked runbook already had recent, detailed answers
+  for. The work wasn't wasted (see below) but could have been scoped much faster with this file in
+  hand from the start.
+- **A "redundant" full re-audit right after a real prior sweep usually isn't, if code changed in
+  between — but you must prove that, not assume it.** This pass's own findings turned out to be
+  genuinely new (the prior sweep's snapshot predates same-day feature work by hours — AI-4
+  real-data-gaps and the EXECUTE UI tail both landed *after* passes #1-#6 here). Proof, not
+  assumption: cross-referenced every overlapping-file finding (recovery.ts, parse.ts, scrub.ts,
+  ingest.ts rate-limiting) against the actual committed `docs/bugs.md`/`docs/secure.md` text before
+  writing up a "new" finding, and in every case found the new finding was a *different* defect in
+  the same area (e.g. a TOCTOU race in the exact sibling-sum logic a prior fix had just added) —
+  never a straight duplicate, never a contradiction of an existing fix. Zero findings from pass #3
+  (auth-check re-audit) is itself a positive signal, not a gap: it means the prior sweep's 15 fixes
+  are holding with no regressions.
+- **Money-path and PHI-bearing-code findings need a stricter default than "fix everything
+  autonomously," even under an explicit ultracode/workflow opt-in.** Established this session as
+  policy (see the money-path-scrutiny convention already in this repo's Claude memory): for any
+  defect in pricing/recovery/at-risk/denied-amount/adjustment logic or PHI/audit-log/tenant-
+  isolation code, report + add a `test.fails()` regression test that documents the exact failure
+  scenario, but do NOT change the source — gate for a human's sign-off instead. `test.fails()` is
+  the right vitest primitive for this: the suite stays green (the test is *expected* to fail), and
+  the moment someone lands the real fix, that same test starts failing the build — the natural
+  trigger to convert it into a normal assertion. Applied across every pass this session; 7 of 10
+  bug-hunt findings, all 1 security-relevant PHI finding, and 0 of the minimap's safe-tier fixes
+  needed this gate (architectural weaknesses were a different risk class — see below).
+- **Right-size the finder fleet to the actual scope, not a copy-pasted template.** The bug-hunt pass
+  (whole monorepo) used 10 parallel finders; the follow-up auth-check pass (2 route files + 11
+  server actions — a fully enumerable surface) used exactly 3, and correctly found 0 issues cheaply
+  (3 agents, ~255K tokens) instead of over-provisioning. Scale the fleet to the surface area, not to
+  "how thorough should this feel."
+- **A workflow agent can return structurally-valid-but-garbage placeholder output** ("SUBSYSTEM:
+  test", "KEY FILES: a.ts") that still satisfies the JSON schema and won't show up as an `agents_
+  error`/`agents_empty_result` — only a diff against expectations (this subsystem's map read nothing
+  like the other 7, obviously truncated/templated) caught it. Don't just check the workflow-level
+  error/empty counters; skim every structured result for shape sanity before trusting it, and
+  re-dispatch a single targeted `Agent` call for just the broken slot rather than re-running the
+  whole workflow (cheaper, and the other 7 results are still good).
+- **`jsx-a11y/no-redundant-roles` doesn't know about `list-style:none` stripping the implicit ARIA
+  role** (a real WCAG 1.3.1 fix from this pass: `role="list"` on a `<ul>` under Tailwind Preflight's
+  reset). ESLint flags the explicit role as redundant against the tag's default implicit role,
+  unaware the CSS override removes that implicit role in WebKit. Fix: a targeted
+  `// eslint-disable-next-line jsx-a11y/no-redundant-roles` with a comment citing the WCAG finding
+  — NOT loosening the shared config, and NOT reverting the accessibility fix. Also: a JSX comment
+  (`{/* ... */}`) placed as if it were a JSX-children sibling breaks parsing when it's actually
+  inside a parenthesized ternary-branch expression, not a children list — use a plain `//` comment
+  in that position instead (JS comments are legal between `(` and the next token; JSX-comment nodes
+  are only legal in actual JSX children position).
+- **The two loose ends an earlier a11y pass explicitly couldn't close (`docs/a11y.md`'s
+  "Considered / Not Independently Re-verified" section) were both resolvable with a *single*
+  main-thread chrome-devtools session and zero sibling agents contending for the shared "selected
+  page" pointer** — confirming that pass's own diagnosis (it was a concurrency/tooling limitation,
+  not an unfixable environment gap). A **real click** on the theme-toggle button (not a scripted
+  `classList.add('dark')`) reproduced neither of the originally-flagged contrast failures — both
+  measured 7.74:1, confirming the original bad reading really was a scripted-toggle artifact as
+  suspected. Lesson: when a prior audit flags something as "couldn't verify, tooling limitation, not
+  a confirmed bug," a dedicated single-agent live follow-up is often cheap and conclusive — don't
+  leave it open indefinitely just because the original attempt was blocked.
+- **Limit Looping (self-pause/resume at the 5h usage wall) worked cleanly across a real pause this
+  session** — paused after task 1 (bug hunt) at 87% usage rather than risk crossing 100% mid-
+  workflow, wrote a `resume.md` capturing exact task-queue state + uncommitted-file inventory +
+  a design correction for the remaining tasks, chained two `ScheduleWakeup` hops to the reset, and
+  resumed with zero user re-explanation needed. One design lesson from the resume itself: the first
+  pass (bug hunt) had done find→verify→**fix all in one workflow run**, then written `bugs.md`
+  *after* — which inverts what tasks 2/5/6 explicitly required ("write the findings file BEFORE
+  fixing"). Restructured remaining find-report-fix tasks into two separate `Workflow` calls (find
+  +verify only, returning structured findings → write the doc → separate fix-only workflow) so the
+  findings file is genuinely pre-fix, and so a mid-fix limit-hit can't lose already-durable findings.
 
 ### Codebase minimap audit (2026-07-10)
 

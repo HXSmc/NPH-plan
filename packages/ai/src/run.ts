@@ -10,10 +10,15 @@
 // other tenants (security review, availability).
 import "server-only";
 import { withTenant, schema, type Pool, type Database } from "@taweed/db";
-import { AiDisabledError } from "./errors.js";
-import { isFeatureEnabled, type AiFeature } from "./config.js";
+import { AiConfigError, AiDisabledError } from "./errors.js";
+import {
+  isFeatureEnabled,
+  missingProviderConfig,
+  type AiFeature,
+} from "./config.js";
 import { sha256Hex } from "./sha256.js";
 import { writeLlmCall } from "./audit.js";
+import { createAnthropicProvider } from "./anthropic-1p.js";
 import type { LlmProvider, StructuredRequest } from "./provider.js";
 
 const PURPOSE_BY_FEATURE: Record<AiFeature, string> = {
@@ -57,6 +62,61 @@ export async function isTenantAiEnabled(db: Database): Promise<boolean> {
   const first = rows[0];
   if (first === undefined) return true;
   return first.enabled === true;
+}
+
+/**
+ * Provider resolution shared by every feature entrypoint: an explicitly
+ * injected provider (test/dev) always wins; on the live path (no injection),
+ * a feature that is enabled but missing ANTHROPIC_API_KEY is a MISCONFIGURATION,
+ * not an off-state, so it fails LOUD and DISTINCT (AiConfigError) instead of
+ * letting the SDK throw an auth error at request time that would collapse into
+ * the same silent "unavailable" as a deliberate off.
+ */
+export function resolveAiProvider(
+  provider: LlmProvider | undefined,
+  env: NodeJS.ProcessEnv,
+): LlmProvider {
+  if (provider !== undefined) return provider;
+  const missing = missingProviderConfig(env);
+  if (missing) throw new AiConfigError(missing);
+  return createAnthropicProvider();
+}
+
+export interface AiGateOptions {
+  feature: AiFeature;
+  env: NodeJS.ProcessEnv;
+  pool: Pool;
+  tenantId: string;
+  /** Test/dev injection; defaults to the anthropic-1p provider on the live path. */
+  provider?: LlmProvider;
+}
+
+/**
+ * Pre-call gate shared by assistAppeal/authorRule/extractEob: the feature-env
+ * switch, the per-tenant DB flag, and provider resolution, in the fail-fast
+ * order every feature entrypoint needs (env check before any DB/provider work,
+ * so a disabled feature never touches the pool — see each feature's *.test.ts
+ * "kill switch" suite for the contract this preserves). Returns the resolved
+ * LlmProvider, or throws AiDisabledError (either switch off) / AiConfigError
+ * (enabled but unconfigured).
+ *
+ * explainFlag.ts does NOT call this directly — its tenant-flag read is fused
+ * into the same short transaction as its dedupe-cache lookup (one round trip
+ * instead of two), and a cache HIT must short-circuit before the provider is
+ * ever resolved (a cached explanation must keep working even when the live
+ * provider is unconfigured). It reuses isFeatureEnabled/isTenantAiEnabled
+ * directly for that fused check, then calls resolveAiProvider above only on a
+ * cache miss.
+ */
+export async function resolveAiGate(opts: AiGateOptions): Promise<LlmProvider> {
+  if (!isFeatureEnabled(opts.feature, opts.env)) {
+    throw new AiDisabledError(`feature '${opts.feature}' is disabled`);
+  }
+  const tenantOk = await withTenant(opts.pool, opts.tenantId, (db) =>
+    isTenantAiEnabled(db),
+  );
+  if (!tenantOk) throw new AiDisabledError("tenant AI flag is off");
+  return resolveAiProvider(opts.provider, opts.env);
 }
 
 export interface RunContext<T> {

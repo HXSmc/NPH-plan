@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # pnpm workspace (root + apps/* + packages/* + test/synthetic-*).
+  # Dependabot's "npm" ecosystem covers pnpm-lock.yaml (pnpm v7-v10).
+  # `directories` (plural) supports globbing; `directory` (singular) does not.
+  - package-ecosystem: "npm"
+    directories:
+      - "/"
+      - "/apps/*"
+      - "/packages/*"
+      - "/test/synthetic-fhir"
+      - "/test/synthetic-eob"
+    schedule:
+      interval: "weekly"
+    groups:
+      # Bundle low-risk minor/patch bumps into one PR per directory per week;
+      # major bumps stay ungrouped so each gets individual review.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"

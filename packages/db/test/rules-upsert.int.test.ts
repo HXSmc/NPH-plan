@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { newId } from "@taweed/shared";
 import { getPool, withTenant, schema, type Pool } from "../src/index.js";
 import { migrate, appConnectionString } from "./migrate.js";
+import { seedTenant } from "./helpers.js";
 
 // Review-fix #1 regression (HIGH): the authored-rule upsert (apps/web
 // persistDraftRule) targets the PARTIAL unique index from migration 0007
@@ -18,15 +19,6 @@ const adminPool: Pool = getPool(adminUrl);
 const pool: Pool = getPool(appConnectionString(adminUrl));
 
 const tenantA = newId();
-
-async function seedTenant(id: string): Promise<void> {
-  const client = await adminPool.connect();
-  try {
-    await client.query("INSERT INTO tenants (id, name) VALUES ($1, $2)", [id, "Clinic A"]);
-  } finally {
-    client.release();
-  }
-}
 
 function upsert(ruleKey: string, messageEn: string) {
   return withTenant(pool, tenantA, async (db) => {
@@ -58,7 +50,7 @@ function upsert(ruleKey: string, messageEn: string) {
 
 beforeAll(async () => {
   await migrate(adminPool);
-  await seedTenant(tenantA);
+  await seedTenant(adminPool, tenantA);
 }, 60_000);
 
 afterAll(async () => {

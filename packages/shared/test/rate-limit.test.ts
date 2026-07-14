@@ -39,4 +39,16 @@ describe("checkRateLimit — fixed window", () => {
     const mid = checkRateLimit(first.next, 4000, 5, 10_000);
     expect(mid.resetInMs).toBe(7000); // 10000 - (4000 - 1000)
   });
+
+  it("denies every request in a fresh window when limit is 0 (kill switch)", () => {
+    const d = checkRateLimit(undefined, 1000, 0, 60_000);
+    expect(d.allowed).toBe(false);
+    expect(d.remaining).toBe(0);
+  });
+
+  it("denies every request in a fresh window when limit is negative", () => {
+    const d = checkRateLimit(undefined, 1000, -1, 60_000);
+    expect(d.allowed).toBe(false);
+    expect(d.remaining).toBe(0);
+  });
 });

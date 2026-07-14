@@ -2,12 +2,11 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import { withTenant, schema, type Pool } from "@taweed/db";
 import type { Severity } from "@taweed/rules-engine";
-import { AiConfigError, AiDisabledError } from "../errors.js";
-import { isFeatureEnabled, missingProviderConfig } from "../config.js";
+import { AiDisabledError } from "../errors.js";
+import { isFeatureEnabled } from "../config.js";
 import { normalizeArabicOutput } from "../postprocess-ar.js";
 import { sha256Hex } from "../sha256.js";
-import { runStructured, isTenantAiEnabled } from "../run.js";
-import { createAnthropicProvider } from "../anthropic-1p.js";
+import { runStructured, isTenantAiEnabled, resolveAiProvider } from "../run.js";
 import type { LlmProvider } from "../provider.js";
 import {
   FlagExplanationSchema,
@@ -167,16 +166,11 @@ export async function explainFlag(
     return toExplanation(gate.hit);
   }
 
-  // Live path: a feature that is ENABLED but has no configured provider (no
-  // injected provider AND no ANTHROPIC_API_KEY) is a MISCONFIGURATION, not an
-  // off-state — fail LOUD and DISTINCT (AiConfigError) so ops can tell it apart
-  // from a deliberate off, instead of the SDK throwing an auth error at request
-  // time that collapses into the same silent "unavailable".
-  if (opts.provider === undefined) {
-    const missing = missingProviderConfig(env);
-    if (missing) throw new AiConfigError(missing);
-  }
-  const provider = opts.provider ?? createAnthropicProvider();
+  // Live path: resolveAiProvider throws AiConfigError (distinct from a
+  // deliberate off) when the feature is enabled but no provider is configured.
+  // This only runs on a cache MISS — the cache-hit return above means a
+  // cached explanation keeps working even when the live provider isn't.
+  const provider = resolveAiProvider(opts.provider, env);
 
   // The provider call + its audit row happen here (audit inside a short txn).
   const parsed = await runStructured<FlagExplanation>({

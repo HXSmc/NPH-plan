@@ -47,6 +47,16 @@ function whereFrom(conds: SQL[]): SQL {
   return sql` WHERE ${sql.join(conds, sql` AND `)}`;
 }
 
+// Shared join tail: `claim_lines cl` -> `claims c`, keyed off an already-bound
+// `denials d`. Every rollup below reaches claims through denials this same
+// way — either directly (`FROM denials d`) or via appeals (`FROM appeals a
+// JOIN denials d ON d.id = a.denial_id`) — so this fragment is spliced in
+// immediately after `d` is bound, in both shapes. Interpolating it keeps the
+// `cl`/`c` aliases identical everywhere instead of hand-duplicating the join.
+const DENIAL_CLAIM_LINE_JOIN = sql`
+    JOIN claim_lines cl ON cl.id = d.claim_line_id
+    JOIN claims c ON c.id = cl.claim_id`;
+
 export type DenialDimension =
   "payer" | "branch" | "provider" | "reason" | "sbs";
 
@@ -123,9 +133,7 @@ export async function denialRateBy(
            COUNT(DISTINCT c.id)::int AS claims,
            COUNT(DISTINCT d.id)::int AS denied,
            COALESCE(SUM(d.denied_amount), 0)::numeric(14,2)::text AS at_risk_sar
-    FROM denials d
-    JOIN claim_lines cl ON cl.id = d.claim_line_id
-    JOIN claims c ON c.id = cl.claim_id${cfg.join}${where}
+    FROM denials d${DENIAL_CLAIM_LINE_JOIN}${cfg.join}${where}
     GROUP BY ${cfg.keyExpr}, ${cfg.labelExpr}
     ORDER BY SUM(d.denied_amount) DESC, key ASC
   `);
@@ -167,9 +175,7 @@ export async function reasonPareto(
     SELECT d.reason_code AS code,
            COUNT(*)::int AS count,
            COALESCE(SUM(d.denied_amount), 0)::numeric(14,2)::text AS sar
-    FROM denials d
-    JOIN claim_lines cl ON cl.id = d.claim_line_id
-    JOIN claims c ON c.id = cl.claim_id${where}
+    FROM denials d${DENIAL_CLAIM_LINE_JOIN}${where}
     GROUP BY d.reason_code
     ORDER BY SUM(d.denied_amount) DESC, d.reason_code ASC
   `);
@@ -214,9 +220,7 @@ export async function moneyScope(
   const result = await db.execute<MoneyScopeRow>(sql`
     SELECT
       (SELECT COALESCE(SUM(GREATEST(d.denied_amount - COALESCE(won.recovered, 0), 0)), 0)::numeric(14,2)::text
-         FROM denials d
-         JOIN claim_lines cl ON cl.id = d.claim_line_id
-         JOIN claims c ON c.id = cl.claim_id
+         FROM denials d${DENIAL_CLAIM_LINE_JOIN}
          LEFT JOIN (
            SELECT denial_id, SUM(recovered_amount) AS recovered
              FROM appeals WHERE status = 'won' GROUP BY denial_id
@@ -224,14 +228,10 @@ export async function moneyScope(
          ${claimScopeWhere}) AS at_risk_sar,
       (SELECT COALESCE(SUM(a.recovered_amount), 0)::numeric(14,2)::text
          FROM appeals a
-         JOIN denials d ON d.id = a.denial_id
-         JOIN claim_lines cl ON cl.id = d.claim_line_id
-         JOIN claims c ON c.id = cl.claim_id
+         JOIN denials d ON d.id = a.denial_id${DENIAL_CLAIM_LINE_JOIN}
          ${recoveredWhere}) AS recovered_sar,
       (SELECT COUNT(*)::int
-         FROM denials d
-         JOIN claim_lines cl ON cl.id = d.claim_line_id
-         JOIN claims c ON c.id = cl.claim_id
+         FROM denials d${DENIAL_CLAIM_LINE_JOIN}
          ${claimScopeWhere}) AS denied_count,
       (SELECT COUNT(*)::int FROM claims c${claimScopeWhere}) AS claim_count
   `);
@@ -305,9 +305,7 @@ export async function recoverability(
   }>(sql`
     SELECT c.payer_id, d.reason_code, a.status
       FROM appeals a
-      JOIN denials d ON d.id = a.denial_id
-      JOIN claim_lines cl ON cl.id = d.claim_line_id
-      JOIN claims c ON c.id = cl.claim_id`);
+      JOIN denials d ON d.id = a.denial_id${DENIAL_CLAIM_LINE_JOIN}`);
   return recoverabilityByPayerReason(
     res.rows.map((r) => ({
       payerId: r.payer_id,
@@ -361,9 +359,7 @@ export async function trend(
     WITH denied AS (
       SELECT substr(c.submitted_at, 1, 7) AS period,
              SUM(d.denied_amount) AS denied_sar
-      FROM denials d
-      JOIN claim_lines cl ON cl.id = d.claim_line_id
-      JOIN claims c ON c.id = cl.claim_id
+      FROM denials d${DENIAL_CLAIM_LINE_JOIN}
       ${datedWhere}
       GROUP BY 1
     ),
@@ -371,9 +367,7 @@ export async function trend(
       SELECT substr(c.submitted_at, 1, 7) AS period,
              SUM(a.recovered_amount) AS recovered_sar
       FROM appeals a
-      JOIN denials d ON d.id = a.denial_id
-      JOIN claim_lines cl ON cl.id = d.claim_line_id
-      JOIN claims c ON c.id = cl.claim_id
+      JOIN denials d ON d.id = a.denial_id${DENIAL_CLAIM_LINE_JOIN}
       ${recoveredWhere}
       GROUP BY 1
     )

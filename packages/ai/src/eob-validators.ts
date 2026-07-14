@@ -87,6 +87,82 @@ function mixedDigitFinding(fieldPath: string, value: string): ValidatorFinding {
   };
 }
 
+// --- shared money-field vocabulary --------------------------------------------
+
+// Structural note: this module previously repeated the same
+// "Array<[string, number]> of the five/four money-field names, then .map()
+// it through a single-field check" scaffold six times (the four
+// non-negativity/magnitude finding builders below, plus the claim-total
+// reducer above them). All six are one operation — apply a predicate to a
+// named list of money fields — so the field-name lists are defined ONCE
+// here and reused everywhere: LINE_MONEY_FIELDS by the line-level checks,
+// CLAIM_MONEY_FIELDS by the claim-level checks and by claimTotalFindings's
+// declared-vs-computed comparison (via CLAIM_TOTAL_LINE_FIELD, which maps
+// each claim-level total back to the line-level field it sums).
+type LineMoneyField =
+  | "billedHalalas"
+  | "paidHalalas"
+  | "patientShareHalalas"
+  | "rejectedHalalas"
+  | "adjustmentHalalas";
+
+type ClaimMoneyField =
+  | "totalBilledHalalas"
+  | "totalPaidHalalas"
+  | "totalRejectedHalalas"
+  | "totalAdjustmentHalalas";
+
+// All five line-level buckets. patientShare has no claim-level total (a
+// remittance never reports a "total patient share" field), so it is absent
+// from CLAIM_MONEY_FIELDS/CLAIM_TOTAL_LINE_FIELD below.
+const LINE_MONEY_FIELDS: readonly LineMoneyField[] = [
+  "billedHalalas",
+  "paidHalalas",
+  "patientShareHalalas",
+  "rejectedHalalas",
+  "adjustmentHalalas",
+];
+
+const CLAIM_MONEY_FIELDS: readonly ClaimMoneyField[] = [
+  "totalBilledHalalas",
+  "totalPaidHalalas",
+  "totalRejectedHalalas",
+  "totalAdjustmentHalalas",
+];
+
+const CLAIM_TOTAL_LINE_FIELD: Record<ClaimMoneyField, LineMoneyField> = {
+  totalBilledHalalas: "billedHalalas",
+  totalPaidHalalas: "paidHalalas",
+  totalRejectedHalalas: "rejectedHalalas",
+  totalAdjustmentHalalas: "adjustmentHalalas",
+};
+
+// Builds the [fieldName, value] pairs a per-field check (non-negativity,
+// magnitude) maps over, for a line or a claim respectively — the one place
+// LINE_MONEY_FIELDS/CLAIM_MONEY_FIELDS are turned into concrete values.
+function lineMoneyEntries(line: EobLine): Array<[string, number]> {
+  return LINE_MONEY_FIELDS.map((field) => [field, line[field]]);
+}
+
+function claimMoneyEntries(claim: EobClaim): Array<[string, number]> {
+  return CLAIM_MONEY_FIELDS.map((field) => [field, claim[field]]);
+}
+
+// Generic "apply a single-field check to a named list of money fields"
+// scaffold — the one operation lineNonNegativityFindings/
+// claimNonNegativityFindings/lineMagnitudeFindings/claimMagnitudeFindings
+// all structurally are. `buildFinding` is one of nonNegativeMoneyFinding /
+// withinMagnitudeFinding (defined further below, near their respective
+// checks) — both already have the `(path, field, value) => ValidatorFinding`
+// shape this expects.
+function checkMoneyFields(
+  path: string,
+  entries: Array<[string, number]>,
+  buildFinding: (path: string, field: string, value: number) => ValidatorFinding,
+): ValidatorFinding[] {
+  return entries.map(([field, value]) => buildFinding(path, field, value));
+}
+
 // --- cross-total checks -------------------------------------------------------
 
 function lineTotalFinding(claimId: string, line: EobLine): ValidatorFinding {
@@ -104,31 +180,17 @@ function lineTotalFinding(claimId: string, line: EobLine): ValidatorFinding {
 }
 
 function claimTotalFindings(claim: EobClaim): ValidatorFinding[] {
-  const sums = claim.lines.reduce(
-    (acc, l) => ({
-      billed: acc.billed + l.billedHalalas,
-      paid: acc.paid + l.paidHalalas,
-      rejected: acc.rejected + l.rejectedHalalas,
-      adjustment: acc.adjustment + l.adjustmentHalalas,
-    }),
-    { billed: 0, paid: 0, rejected: 0, adjustment: 0 },
-  );
-
-  const checks: Array<[string, number, number]> = [
-    ["totalBilledHalalas", claim.totalBilledHalalas, sums.billed],
-    ["totalPaidHalalas", claim.totalPaidHalalas, sums.paid],
-    ["totalRejectedHalalas", claim.totalRejectedHalalas, sums.rejected],
-    ["totalAdjustmentHalalas", claim.totalAdjustmentHalalas, sums.adjustment],
-  ];
-
-  return checks.map(([field, declared, computed]) => {
+  return CLAIM_MONEY_FIELDS.map((claimField) => {
+    const lineField = CLAIM_TOTAL_LINE_FIELD[claimField];
+    const declared = claim[claimField];
+    const computed = claim.lines.reduce((sum, l) => sum + l[lineField], 0);
     const ok = declared === computed;
     return {
       check: "claim-total",
       passed: ok,
       detail: ok
-        ? `${claim.claimId}: ${field} ${declared} == sum of line values (${computed})`
-        : `${claim.claimId}: ${field} ${declared} != sum of line values (${computed})`,
+        ? `${claim.claimId}: ${claimField} ${declared} == sum of line values (${computed})`
+        : `${claim.claimId}: ${claimField} ${declared} != sum of line values (${computed})`,
     };
   });
 }
@@ -255,24 +317,11 @@ function nonNegativeMoneyFinding(path: string, field: string, value: number): Va
 
 function lineNonNegativityFindings(claimId: string, line: EobLine): ValidatorFinding[] {
   const path = `${claimId}/${line.claimLineRef}`;
-  const fields: Array<[string, number]> = [
-    ["billedHalalas", line.billedHalalas],
-    ["paidHalalas", line.paidHalalas],
-    ["patientShareHalalas", line.patientShareHalalas],
-    ["rejectedHalalas", line.rejectedHalalas],
-    ["adjustmentHalalas", line.adjustmentHalalas],
-  ];
-  return fields.map(([field, value]) => nonNegativeMoneyFinding(path, field, value));
+  return checkMoneyFields(path, lineMoneyEntries(line), nonNegativeMoneyFinding);
 }
 
 function claimNonNegativityFindings(claim: EobClaim): ValidatorFinding[] {
-  const fields: Array<[string, number]> = [
-    ["totalBilledHalalas", claim.totalBilledHalalas],
-    ["totalPaidHalalas", claim.totalPaidHalalas],
-    ["totalRejectedHalalas", claim.totalRejectedHalalas],
-    ["totalAdjustmentHalalas", claim.totalAdjustmentHalalas],
-  ];
-  return fields.map(([field, value]) => nonNegativeMoneyFinding(claim.claimId, field, value));
+  return checkMoneyFields(claim.claimId, claimMoneyEntries(claim), nonNegativeMoneyFinding);
 }
 
 // --- money-magnitude bound (float64-precision safety) -------------------------
@@ -313,24 +362,11 @@ function withinMagnitudeFinding(path: string, field: string, value: number): Val
 
 function lineMagnitudeFindings(claimId: string, line: EobLine): ValidatorFinding[] {
   const path = `${claimId}/${line.claimLineRef}`;
-  const fields: Array<[string, number]> = [
-    ["billedHalalas", line.billedHalalas],
-    ["paidHalalas", line.paidHalalas],
-    ["patientShareHalalas", line.patientShareHalalas],
-    ["rejectedHalalas", line.rejectedHalalas],
-    ["adjustmentHalalas", line.adjustmentHalalas],
-  ];
-  return fields.map(([field, value]) => withinMagnitudeFinding(path, field, value));
+  return checkMoneyFields(path, lineMoneyEntries(line), withinMagnitudeFinding);
 }
 
 function claimMagnitudeFindings(claim: EobClaim): ValidatorFinding[] {
-  const fields: Array<[string, number]> = [
-    ["totalBilledHalalas", claim.totalBilledHalalas],
-    ["totalPaidHalalas", claim.totalPaidHalalas],
-    ["totalRejectedHalalas", claim.totalRejectedHalalas],
-    ["totalAdjustmentHalalas", claim.totalAdjustmentHalalas],
-  ];
-  return fields.map(([field, value]) => withinMagnitudeFinding(claim.claimId, field, value));
+  return checkMoneyFields(claim.claimId, claimMoneyEntries(claim), withinMagnitudeFinding);
 }
 
 // --- denial-code validity (defense in depth) ---------------------------------

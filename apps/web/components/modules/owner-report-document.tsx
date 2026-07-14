@@ -70,7 +70,8 @@ export function OwnerReportDocument({
           {bundle.topPayers.length === 0 ? (
             <p className="text-body text-muted">{t("emptyTopPayers")}</p>
           ) : (
-            <ul className="flex flex-col">
+            // eslint-disable-next-line jsx-a11y/no-redundant-roles -- role is NOT redundant: Tailwind Preflight's list-style:none strips the implicit list/listitem ARIA role in WebKit (WCAG 1.3.1, docs/a11y.md #24)
+            <ul role="list" className="flex flex-col">
               {bundle.topPayers.map((p) => (
                 <li
                   key={p.name}

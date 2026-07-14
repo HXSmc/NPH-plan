@@ -17,6 +17,19 @@ import { resolveFirstDimensions } from "@/lib/tenant-dimensions";
 const INGEST_RATE_LIMIT = 10;
 const INGEST_WINDOW_MS = 60_000;
 
+// Security guard (common/security.md): with no cap, an authorized actor could
+// upload a FHIR bundle with an arbitrarily large number of claim/response
+// pairs, driving an unbounded sequential, awaited per-pair DB insert loop
+// below. Mirrors the MAX_UPLOAD_ROWS cap on the CSV ingest path (apps/web/
+// lib/actions/ingest-csv.ts) — same order of magnitude, scaled down because a
+// FHIR bundle pair carries claim + response + line items, so it is a heavier
+// per-unit parse/insert cost than a single CSV row.
+const MAX_BUNDLE_PAIRS = 500;
+
+function tooManyPairs(pairCount: number): boolean {
+  return pairCount > MAX_BUNDLE_PAIRS;
+}
+
 export interface QuarantineItem {
   ref: string;
   reason: string;
@@ -111,6 +124,14 @@ export async function ingestBundle(formData: FormData): Promise<IngestResult> {
       fileName,
       error: err instanceof Error ? err.message : "could not parse bundle",
     };
+  }
+
+  // Reject oversized bundles before the per-pair insert loop below — the real
+  // amplification vector (see MAX_BUNDLE_PAIRS): reject outright, don't
+  // silently truncate to the cap, so the caller knows the upload was not
+  // fully processed.
+  if (tooManyPairs(parsed.pairs.length)) {
+    return { ...empty, fileName, error: "bundle has too many claims to import" };
   }
 
   const quarantined: QuarantineItem[] = parsed.issues.map((iss, i) => ({

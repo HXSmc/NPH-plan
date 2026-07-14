@@ -33,9 +33,35 @@ export interface EobIngestContext {
   patientId: string;
 }
 
-function lineNumberFor(ref: string, index: number): number {
+function explicitLineNumber(ref: string): number | null {
   const n = Number(ref);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : index + 1;
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
+/**
+ * Assigns a line_number to every line in a claim, in one pass over the whole
+ * claim rather than per-line. A per-line `index + 1` fallback (the previous
+ * approach) can collide with another line's *explicit* numeric claimLineRef
+ * in the same claim — e.g. lines ["abc", "1"]: line 0 falls back to
+ * index+1=1, and line 1 parses directly to 1, so both end up with
+ * line_number=1 with no DB uniqueness constraint to catch it. Reserving
+ * every explicit ref up front and only handing out fallback numbers that
+ * are not already reserved (or taken by an earlier fallback) keeps
+ * (claim_id, line_number) unambiguous within the claim.
+ */
+function assignLineNumbers(refs: readonly string[]): number[] {
+  const explicit = refs.map(explicitLineNumber);
+  const reserved = new Set(explicit.filter((n): n is number => n !== null));
+
+  let nextFallback = 1;
+  const nextAvailable = (): number => {
+    while (reserved.has(nextFallback)) nextFallback += 1;
+    const n = nextFallback;
+    reserved.add(n);
+    return n;
+  };
+
+  return explicit.map((n) => n ?? nextAvailable());
 }
 
 /** One EOB claim + its lines -> one NormalizedClaim (claim, lines, response, denials). */
@@ -111,13 +137,14 @@ function buildOneClaim(
 
   const lines: ClaimLineRow[] = [];
   const denials: DenialRow[] = [];
+  const lineNumbers = assignLineNumbers(claim.lines.map((line) => line.claimLineRef));
   claim.lines.forEach((line, i) => {
     const lineId = newId();
     lines.push({
       id: lineId,
       tenant_id: ctx.tenantId,
       claim_id: claimId,
-      line_number: lineNumberFor(line.claimLineRef, i),
+      line_number: lineNumbers[i]!,
       sbs_code: line.sbsCode,
       icd10am_code: line.icd10amCode,
       // The wire schema carries no quantity; a remittance line is one billed

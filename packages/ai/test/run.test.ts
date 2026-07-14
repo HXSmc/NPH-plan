@@ -44,7 +44,13 @@ vi.mock("../src/audit.js", () => ({
 
 import { withTenant } from "@taweed/db";
 import { writeLlmCall } from "../src/audit.js";
-import { runStructured, redactAuditError } from "../src/run.js";
+import {
+  runStructured,
+  redactAuditError,
+  resolveAiProvider,
+  resolveAiGate,
+} from "../src/run.js";
+import { AiConfigError, AiDisabledError } from "../src/errors.js";
 
 const mockedWriteLlmCall = vi.mocked(writeLlmCall);
 const mockedWithTenant = vi.mocked(withTenant);
@@ -190,5 +196,133 @@ describe("runStructured — audit-write-failure logging never leaks the raw erro
     expect(loggedDetail).toBe('Error: relation "llm_calls" is not writable');
     expect(loggedDetail).not.toBe(auditWriteError);
     expect(typeof loggedDetail).toBe("string");
+  });
+});
+
+// Coverage for the "duplicated kill-switch sequence" dedup: assistAppeal.ts,
+// authorRule.ts, and extractEob.ts each used to re-derive feature-enabled +
+// tenant-flag + provider-resolution inline; that sequence now lives ONLY here
+// as resolveAiGate/resolveAiProvider. These tests exercise the exact branches
+// that moved (tenant-flag-off and missing-config), which the feature-level
+// *.test.ts kill-switch suites don't reach (they only cover the feature-off
+// short-circuit) and the *.int.test.ts suites can't reach in this environment
+// (no DATABASE_URL / live Postgres).
+const STUB_PROVIDER: LlmProvider = {
+  name: "stub",
+  mapModelId: (m) => `stub-${m}`,
+  capabilities: { batches: false, files: false },
+  client: {
+    async parseStructured() {
+      throw new Error("not used in these tests");
+    },
+  },
+};
+
+function dbWithTenantRow(row: { enabled: boolean } | undefined): Database {
+  return {
+    select: () => ({
+      from: () => ({
+        limit: () => Promise.resolve(row === undefined ? [] : [row]),
+      }),
+    }),
+  } as unknown as Database;
+}
+
+describe("resolveAiProvider", () => {
+  it("returns an injected provider as-is without consulting env", () => {
+    expect(resolveAiProvider(STUB_PROVIDER, {})).toBe(STUB_PROVIDER);
+  });
+
+  it("throws AiConfigError when no provider is injected and ANTHROPIC_API_KEY is unset", () => {
+    expect(() => resolveAiProvider(undefined, {})).toThrow(AiConfigError);
+  });
+
+  it("throws AiConfigError when ANTHROPIC_API_KEY is only whitespace", () => {
+    expect(() =>
+      resolveAiProvider(undefined, { ANTHROPIC_API_KEY: "   " }),
+    ).toThrow(AiConfigError);
+  });
+});
+
+describe("resolveAiGate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const ENABLED = {
+    TAWEED_AI_ENABLED: "true",
+    TAWEED_AI_APPEAL_ENABLED: "true",
+  };
+
+  it("throws AiDisabledError and never touches the pool when the feature flag is off", async () => {
+    const unreachablePool = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("pool must not be accessed when the feature is off");
+        },
+      },
+    ) as unknown as Pool;
+
+    await expect(
+      resolveAiGate({
+        feature: "appeal",
+        env: {},
+        pool: unreachablePool,
+        tenantId: "tenant-1",
+        provider: STUB_PROVIDER,
+      }),
+    ).rejects.toBeInstanceOf(AiDisabledError);
+    expect(mockedWithTenant).not.toHaveBeenCalled();
+  });
+
+  it("throws AiDisabledError when the per-tenant DB flag is off (feature enabled)", async () => {
+    mockedWithTenant.mockImplementation(
+      (_pool: unknown, _tenantId: string, fn: (db: Database) => Promise<unknown>) =>
+        fn(dbWithTenantRow({ enabled: false })),
+    );
+
+    await expect(
+      resolveAiGate({
+        feature: "appeal",
+        env: ENABLED,
+        pool: {} as Pool,
+        tenantId: "tenant-1",
+        provider: STUB_PROVIDER,
+      }),
+    ).rejects.toBeInstanceOf(AiDisabledError);
+  });
+
+  it("throws AiConfigError when both switches are on but no provider is injected/configured", async () => {
+    mockedWithTenant.mockImplementation(
+      (_pool: unknown, _tenantId: string, fn: (db: Database) => Promise<unknown>) =>
+        fn(dbWithTenantRow(undefined)),
+    );
+
+    await expect(
+      resolveAiGate({
+        feature: "appeal",
+        env: ENABLED,
+        pool: {} as Pool,
+        tenantId: "tenant-1",
+      }),
+    ).rejects.toBeInstanceOf(AiConfigError);
+  });
+
+  it("returns the injected provider when both switches are on", async () => {
+    mockedWithTenant.mockImplementation(
+      (_pool: unknown, _tenantId: string, fn: (db: Database) => Promise<unknown>) =>
+        fn(dbWithTenantRow({ enabled: true })),
+    );
+
+    const provider = await resolveAiGate({
+      feature: "appeal",
+      env: ENABLED,
+      pool: {} as Pool,
+      tenantId: "tenant-1",
+      provider: STUB_PROVIDER,
+    });
+
+    expect(provider).toBe(STUB_PROVIDER);
   });
 });

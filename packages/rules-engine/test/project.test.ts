@@ -154,4 +154,58 @@ describe("B5 real projection — unknown signal drives 'unevaluable', not a fals
     // Assert: the last line's qty must not clobber the earlier lines' qty.
     expect(facts.lineUnits["SBS-0002"]).toBe(12);
   });
+
+  // GATED (money/PHI, do not fix source logic here — see handoff notes).
+  // Confirmed bug: R-INFO-line-count ("unusually high number of service
+  // lines") reads the DERIVED `sbsCount` fact, which scrub.ts sets to
+  // `facts.sbsCodes.length` (scrub.ts ~line 245). claimToFactsReal already
+  // deduplicates sbsCodes via `Array.from(new Set(realCodes(lines)))`
+  // (project.ts line 91), so `sbsCount` counts DISTINCT SBS codes, not claim
+  // lines. A claim with 12 service lines that all reuse only 3 distinct SBS
+  // codes (e.g. the same procedure billed across 12 dated/split lines) ends
+  // up with sbsCount === 3, well under the HIGH_LINE_COUNT threshold of 8,
+  // so the rule never fires even though the claim genuinely has an
+  // unusually high number of service lines that should be reviewed for
+  // splitting. This test documents the bug via `it.fails` per policy — do
+  // NOT flip it to a normal passing test without a human-approved fix to
+  // scrub.ts's line-count fact (it would need a real per-line count, not a
+  // dedup'd code count).
+  function twelveLinesThreeCodes(): ProjectionLine[] {
+    return Array.from({ length: 12 }, (_, i) => ({
+      sbs_code: `SBS-000${(i % 3) + 1}`,
+      icd10am_code: "K02.1",
+      qty: 1,
+    }));
+  }
+
+  it("setup sanity: 12 lines sharing 3 SBS codes dedup to sbsCodes.length === 3", () => {
+    // Ordinary passing assertion (kept OUT of the it.fails body below) so the
+    // gated bug test's failure can never be silently caused by this setup
+    // guard instead of the actual bug.
+    const facts = claimToFactsReal(
+      prodClaim(),
+      twelveLinesThreeCodes(),
+      PATIENT,
+      YEAR,
+    );
+    expect(facts.sbsCodes).toHaveLength(3);
+  });
+
+  it.fails(
+    "BUG: R-INFO-line-count should fire for 12 lines sharing only 3 distinct SBS codes, but sbsCount undercounts",
+    async () => {
+      const facts = claimToFactsReal(
+        prodClaim(),
+        twelveLinesThreeCodes(),
+        PATIENT,
+        YEAR,
+      );
+      const result = await scrub(facts, SCRUBBER_RULES);
+      // This is the actually-correct expectation for a 12-line claim; it
+      // fails today because sbsCount === facts.sbsCodes.length === 3, not 12.
+      expect(result.flags.some((f) => f.ruleId === "R-INFO-line-count")).toBe(
+        true,
+      );
+    },
+  );
 });

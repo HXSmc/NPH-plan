@@ -61,4 +61,15 @@ describe("OwnerReportDocument", () => {
 
     expect(screen.getByText(enMessages.report.emptyTopPayers)).toBeInTheDocument();
   });
+
+  it("exposes the top payers list to assistive tech via role=list", () => {
+    // Tailwind Preflight strips `<ul>`'s implicit list styling, which in
+    // WebKit/VoiceOver also strips the implicit list/listitem ARIA roles.
+    // role="list" restores the announced structure without changing markup.
+    renderDoc(bundle());
+
+    const list = screen.getByRole("list");
+    expect(list.tagName).toBe("UL");
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  });
 });

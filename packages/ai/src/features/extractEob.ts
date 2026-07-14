@@ -1,11 +1,8 @@
 import "server-only";
-import { withTenant, type Pool } from "@taweed/db";
-import { AiConfigError, AiDisabledError } from "../errors.js";
-import { isFeatureEnabled, missingProviderConfig } from "../config.js";
+import type { Pool } from "@taweed/db";
 import { normalizeArabicOutput } from "../postprocess-ar.js";
 import { sha256Hex } from "../sha256.js";
-import { runStructured, isTenantAiEnabled } from "../run.js";
-import { createAnthropicProvider } from "../anthropic-1p.js";
+import { runStructured, resolveAiGate } from "../run.js";
 import type { LlmProvider } from "../provider.js";
 import type { TaweedModel } from "../models.js";
 import {
@@ -164,21 +161,13 @@ export async function extractEob(
 ): Promise<ExtractEobResult> {
   const env = opts.env ?? process.env;
 
-  if (!isFeatureEnabled("extractEob", env)) {
-    throw new AiDisabledError("feature 'extractEob' is disabled");
-  }
-
-  // Per-tenant kill switch (short txn; no txn held across the model call).
-  const tenantOk = await withTenant(opts.pool, opts.tenantId, (db) =>
-    isTenantAiEnabled(db),
-  );
-  if (!tenantOk) throw new AiDisabledError("tenant AI flag is off");
-
-  if (opts.provider === undefined) {
-    const missing = missingProviderConfig(env);
-    if (missing) throw new AiConfigError(missing);
-  }
-  const provider = opts.provider ?? createAnthropicProvider();
+  const provider = await resolveAiGate({
+    feature: "extractEob",
+    env,
+    pool: opts.pool,
+    tenantId: opts.tenantId,
+    provider: opts.provider,
+  });
 
   const model = opts.model ?? "sonnet";
   const system = SYSTEM_PROMPT;

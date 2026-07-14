@@ -1,3 +1,4 @@
+import type { DenialReasonCode } from "@taweed/shared";
 import type { DocChecklistItem } from "./types.js";
 
 // Deterministic templates — NO LLM. Arabic authored natively in formal MSA with
@@ -59,7 +60,14 @@ function doc(key: string, en: string, ar: string): DocChecklistItem {
 const SUBJECT_EN = "Formal appeal — claim {claimRef} — {payerName}";
 const SUBJECT_AR = "اعتراض رسمي على رفض المطالبة {claimRef} لدى {payerName}";
 
-export const APPEAL_TEMPLATES: Readonly<Record<string, AppealTemplate>> = {
+// Keyed by the canonical DenialReasonCode union (not a bare string) so a
+// mistyped or renamed key is a COMPILE ERROR instead of silently falling
+// through to GENERIC_TEMPLATE at runtime. Partial because not every taxonomy
+// code is required to have a template yet — an absent entry still falls back
+// to GENERIC_TEMPLATE via generateAppeal, same as before this change.
+export const APPEAL_TEMPLATES: Readonly<
+  Partial<Record<DenialReasonCode, AppealTemplate>>
+> = {
   // TWD-D01 Service not covered (CARC)
   "TWD-D01": {
     subject_en: SUBJECT_EN,

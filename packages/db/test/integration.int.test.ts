@@ -11,6 +11,7 @@ import {
   type Pool,
 } from "../src/index.js";
 import { migrate, appConnectionString } from "./migrate.js";
+import { seedTenant } from "./helpers.js";
 
 // Admin pool (superuser) runs migrations; app pool (NOBYPASSRLS role) runs all
 // tenant queries so RLS actually binds.
@@ -29,23 +30,10 @@ const ctxA: NormalizeContext = {
   dataOrigin: "synthetic",
 };
 
-async function seedTenant(id: string, name: string): Promise<void> {
-  // tenants has no RLS and the app role has no access to it — seed via admin.
-  const client = await adminPool.connect();
-  try {
-    await client.query("INSERT INTO tenants (id, name) VALUES ($1, $2)", [
-      id,
-      name,
-    ]);
-  } finally {
-    client.release();
-  }
-}
-
 beforeAll(async () => {
   await migrate(adminPool);
-  await seedTenant(tenantA, "Clinic A");
-  await seedTenant(tenantB, "Clinic B");
+  await seedTenant(adminPool, tenantA, "Clinic A");
+  await seedTenant(adminPool, tenantB, "Clinic B");
 
   await withTenant(pool, tenantA, async (db) => {
     await db.insert(schema.branches).values({

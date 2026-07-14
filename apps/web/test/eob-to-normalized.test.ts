@@ -166,3 +166,51 @@ describe("buildNormalizedClaimsFromEob — adjustment bucket (write-off) is not 
     expect(normalized!.response.outcome).toBe("partial");
   });
 });
+
+// Regression: lineNumberFor's old per-line index+1 fallback was not checked
+// against explicit numeric claimLineRef values elsewhere in the same claim,
+// so two lines could collide on line_number with no DB uniqueness
+// constraint to catch it — silently persisted as ambiguous/duplicate line
+// identity in claim_lines.
+describe("buildNormalizedClaimsFromEob — line_number uniqueness within a claim", () => {
+  it("does not collide a non-numeric ref's index+1 fallback with another line's explicit numeric ref", () => {
+    // Arrange: line 0 has a non-numeric ref (falls back to index+1 = 1),
+    // line 1 has an explicit ref of "1" — before the fix both got
+    // line_number=1.
+    const extraction = makeExtraction([
+      makeClaim([
+        makeLine({ claimLineRef: "abc" }),
+        makeLine({ claimLineRef: "1" }),
+      ]),
+    ]);
+
+    // Act
+    const [normalized] = buildNormalizedClaimsFromEob(extraction, CTX, toSar);
+
+    // Assert: every line_number in the claim is unique.
+    const lineNumbers = normalized!.lines.map((l) => l.line_number);
+    expect(new Set(lineNumbers).size).toBe(lineNumbers.length);
+    // The explicit ref still wins its number...
+    expect(normalized!.lines[1]!.line_number).toBe(1);
+    // ...and the non-numeric line is bumped to the next free number instead
+    // of colliding with it.
+    expect(normalized!.lines[0]!.line_number).toBe(2);
+  });
+
+  it("still assigns sequential fallback numbers when no lines have explicit numeric refs", () => {
+    // Arrange: three lines, all non-numeric refs.
+    const extraction = makeExtraction([
+      makeClaim([
+        makeLine({ claimLineRef: "a" }),
+        makeLine({ claimLineRef: "b" }),
+        makeLine({ claimLineRef: "c" }),
+      ]),
+    ]);
+
+    // Act
+    const [normalized] = buildNormalizedClaimsFromEob(extraction, CTX, toSar);
+
+    // Assert
+    expect(normalized!.lines.map((l) => l.line_number)).toEqual([1, 2, 3]);
+  });
+});

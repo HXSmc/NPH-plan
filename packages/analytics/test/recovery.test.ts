@@ -79,6 +79,29 @@ describe("resolveRecovery — recovered-exceeds-appealed guardrail (§8.5)", () 
     expect(r.recoveredSar).toBe("0.00");
     expect(r.corrected).toBe(true);
   });
+
+  // GATED (money/PHI, see docs handoff): resolveRecovery drops `reason` on the
+  // corrected-ceiling path when a negative appealedSar floors the ceiling to
+  // zero AND requestedRecoveredSar is omitted (the common "win with no stated
+  // amount" UI case). requested defaults to the floored appealed (0), so it is
+  // neither <0 nor >appealed and execution falls through to the unlabeled
+  // `return { recoveredSar, corrected }` — corrected is true but reason is
+  // undefined, even though the JSDoc documents reason as always present when a
+  // correction happened (so the UI can show an inline correction, §8.5). This
+  // test documents the bug via test.fails and must NOT be un-gated without
+  // human sign-off on the money/PHI logic change (see recovery.ts line ~79).
+  it.fails(
+    "flags a reason when a negative-appealed ceiling correction happens with no stated recovered amount",
+    () => {
+      const r = resolveRecovery({
+        outcome: "won",
+        appealedSar: "-5.00",
+      });
+      expect(r.recoveredSar).toBe("0.00");
+      expect(r.corrected).toBe(true);
+      expect(r.reason).toBe("negative");
+    },
+  );
 });
 
 describe("resolveRecovery — sibling-appeal ceiling (double-booking guardrail)", () => {

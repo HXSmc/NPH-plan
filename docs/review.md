@@ -763,3 +763,39 @@ The ledger's own "Deploy-Ready DoD" checklist is a good living to-do list; sever
 | **Kill switch / fail-closed** | Off by default; must be explicitly enabled; safe when disabled |
 | **Pseudonymize** | Replace an identifier with a token before sending to the AI, restore it after |
 | **Typed swap / stub** | A dev placeholder behind a real interface, replaced at deploy without code changes |
+
+## 2.14 Blocked functions/features — exact map (function → blocker → what turns on)
+
+Every stub below is a **typed swap**: interface real and tested, only the concrete implementation
+waits on a human/external input. Full blocker detail + paste-ready unblock prompts: `docs/blocker.md`.
+None of this blocks the synthetic-data product — everything here is Phase 2 / DEPLOY / real-data-only.
+
+| Function / feature | File:line | Blocked on | What works once cleared |
+|---|---|---|---|
+| `validateAgainstNphiesProfile()` | `packages/fhir/src/nphies-profile.ts:12` | **BLK-6** (IG bundling rights) | Real NPHIES IG/profile validation replaces the base-R4-only hand-rolled check |
+| NPHIES live submission + eligibility client | `packages/nphies-client` (not yet created — scaffolded by BLK-3) | **BLK-3 → BLK-4 → BLK-5** (Academy → PKI → sandbox/conformance) | Direct live claim submission + real-time eligibility to NPHIES |
+| `DENIAL_REASON_CODES` (8 placeholder `TWD-*`) | `packages/shared/src/denial-codes.ts:13` | **BLK-2** (real NPHIES denial-reason codes) | Scrubber/appeals reference real adjudication codes instead of fake taxonomy |
+| Appeal-deadline countdown (hash-derived placeholder) | `apps/web/lib/appeals-data.ts:28` | **BLK-2** (per-payer deadline matrix) | Countdown shows the real per-payer reconsideration window, not a hash |
+| Rule thresholds / SBS codes / payer mappings | `packages/rules-engine/src/rules.ts:8` | **BLK-2** (SBS/ICD-10-AM/denial codes) + **BLK-9** (SME sign-off) | Scrubber flags fire on real coding regime instead of placeholder codes |
+| Arabic appeal templates, doc checklists, payer conventions | `packages/appeals/src/templates.ts:9,306` | **BLK-2** (real codes) + **BLK-9** (KSA-RCM SME sign-off) | Appeal letters clinically/linguistically correct enough to ship to a real clinic — **hard gate**, no real appeal goes out before BLK-9 |
+| Arabic glossary/billing terminology | `packages/shared/src/glossary.ts:7` | **BLK-9** (SME sign-off) | MSA billing wording confirmed correct by a KSA RCM SME |
+| `claimToFactsReal()` vs `claimToFactsSynthetic()` dispatch (`projectClaimFacts`) | `packages/rules-engine/src/project.ts:101,143,194` | **BLK-1** (real partner data) | `data_origin` flips a claim from `synthetic`→`production`; the synthetic hash projection is already hard-guarded to refuse production-tagged claims (EXECUTE B5 gate) — real column signals (pre-auth/eligibility/duplicate/documentation) drive the scrubber instead |
+| Per-tenant dimension resolution from real uploads | `apps/web/lib/actions/ingest.ts:112`, `apps/web/lib/actions/ingest-csv.ts:238` | **BLK-1** (design-partner data) | Real branches/providers/payers/patients created from the partner's own data, instead of mapping onto the tenant's first seeded dimension (current documented CSV-path simplification) |
+| Normalizer missing-amount handling | `apps/web/lib/eob-to-normalized.ts:124` (see §2.11 "BLK-1 latent") | **BLK-1** | Decide quarantine-vs-`0.00` for a real missing adjudication amount — can't trigger on synthetic data (generator always sets an amount), must be fixed before real data lands |
+| Recovery baseline capture at onboarding | `apps/web/lib/data.ts` (`getRecovery`, `recovery_baselines`) | **BLK-1** | Recovered-SAR counter has a real starting baseline instead of a synthetic one |
+| Auth provider (dev credentials picker) | `apps/web/lib/auth.ts:25`, `apps/web/app/[locale]/(auth)/login/page.tsx:12` | **BLK-7** (KSA-resident OIDC — provider not yet even chosen) | Production login via a real KSA-resident, PDPL-compliant IdP; dev picker stays for local-only behind `TAWEED_ENABLE_DEV_AUTH` |
+| DB/session credential source | `apps/web/lib/db.ts:19` | **BLK-7** + **BLK-8** | Real secrets-manager-sourced DB credentials instead of dev env values |
+| KSA OIDC config loader | `packages/platform/src/oidc.ts:7,33` (`ksaOidcConfigFromEnv`) | **BLK-7** | Already has a typed config shape waiting for a real issuer/client — just needs the chosen IdP's values |
+| Object store + KMS | `@taweed/platform` (in-memory dev impl) | **BLK-8** (Oracle Cloud Riyadh creds) | Real KSA-region S3-compatible storage + per-tenant KMS envelope encryption for raw bundles/documents |
+| `infra/` Terraform | Does not exist yet — authored from scratch when BLK-8 clears | **BLK-8** | Applied infrastructure in `me-riyadh-1`, not just a skeleton |
+| XLSX ingest adapter | typed adapter stub (SheetJS not injected) | none blocking — buildable now, just not built | Real spreadsheet ingest, same field-mapping panel as CSV |
+| `AzureDocIntelOcrAdapter` | `packages/ingest/src/adapters/azure-doc-intel-adapter.ts:13,18` | **BLK-AI-1/2** (counsel + Anthropic org/ZDR) if this route is chosen, or a separate Azure decision | Alternate OCR/extraction backend for scanned EOBs |
+| `SelfHostedVlmAdapter` | `packages/ai/src/adapters/selfhosted-vlm-adapter.ts:16,22` | **BLK-AI-3** (OCI Riyadh GPU quota/pricing) — only if self-host route chosen for AI-4 | Zero-cross-border PDF extraction, no data leaving KSA |
+| `ClaudeVisionOcrAdapter` on **real** documents (already built + tested on synthetic PDFs) | `packages/ai/src/adapters/claude-vision-ocr.ts` | **BLK-AI-1** (counsel sign-off incl. the two concrete pre-enable checks: `INFERENCE_GEO` cross-border flag-flip; `errorReport()` field-level-leak risk in `apps/web/components/modules/eob-review/eob-extraction-form.tsx`) + **BLK-AI-2** (Anthropic org + ZDR + DPA) | Real remittance/EOB PDFs go through AI-4 extraction instead of only synthetic ones — flip `TAWEED_AI_EXTRACT_EOB_ENABLED` |
+| Adjustment/withholding bucket persistence | `apps/web/lib/eob-to-normalized.ts:100,129` (`TODO(ai-route)`) | schema migration decision, buildable now, deliberately deferred (not a blocker) | Contractual write-offs flow into `ClaimRow`/`DenialRow` instead of staying display-only in `eob_extractions` |
+| Live LLM calls of any kind (AI-1/AI-2/AI-3/AI-4 beyond fixtures) | `packages/ai/src/adapters/anthropic-1p.ts` | **BLK-AI-2** (Anthropic org + ZDR + DPA) | `TAWEED_AI_ENABLED=true` actually reaches the real API instead of `FixtureProvider`/deterministic fallback |
+| `AI_EVALS_LIVE=1` scored eval run | `packages/ai/evals/scoring.ts`, `packages/ai/evals/extractEob.eval.ts` | **BLK-AI-2** (needs a live key) | The 98%/95% accuracy thresholds become proven results instead of unscored targets |
+
+**Read this table alongside, not instead of:** §2.10 (stub inventory), §2.11 (deferred items), and
+`docs/blocker.md` (per-blocker paste-ready unblock prompts — copy the prompt for the cleared blocker
+into a fresh session to build the real feature immediately).

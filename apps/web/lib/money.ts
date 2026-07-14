@@ -36,10 +36,22 @@ export function formatMoney(value: string | number): string {
 export function formatMoneyCompact(value: string | number): string {
   const n = typeof value === "string" ? Number(value) : value;
   if (!Number.isFinite(n)) return "0";
-  if (Math.abs(n) >= 1_000_000)
-    return `${(n / 1_000_000).toFixed(2).replace(/\.00$/, "")}M`;
+  // MONEY-PATH FIX: check the K-band's rounded-up value against the M
+  // threshold before formatting. A value like 999950 falls under the
+  // 1_000_000 branch (Math.abs(n) < 1_000_000) but (n / 1000).toFixed(1)
+  // rounds "999.95" up to "1000.0" -> stripped to "1000", producing the
+  // display string "1000K" instead of rolling into the M-suffix band the
+  // >=1_000_000 branch is meant to own. Recomputing the rounded K value
+  // first and falling through to the M branch when it hits 1000 keeps the
+  // two bands' boundary consistent for every input, not just exact millions.
+  if (Math.abs(n) >= 100_000 && Math.abs(n) < 1_000_000) {
+    const kValue = Number((n / 1000).toFixed(1));
+    if (Math.abs(kValue) < 1000)
+      return `${kValue.toFixed(1).replace(/\.0$/, "")}K`;
+    // kValue rounded up to 1000 (or beyond) -- fall through to the M band.
+  }
   if (Math.abs(n) >= 100_000)
-    return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K`;
+    return `${(n / 1_000_000).toFixed(2).replace(/\.00$/, "")}M`;
   return formatMoney(n);
 }
 

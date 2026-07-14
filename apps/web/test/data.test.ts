@@ -1,0 +1,424 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Coverage gap fixed: every other test that imports "@/lib/data" (recovery-
+// page.test.ts, settings-page.test.ts, scrubber-table.test.tsx, audit-report-
+// document.test.tsx, owner-report-document.test.tsx, recovery-pipeline-*
+// .test.tsx) does `vi.mock("@/lib/data", ...)` and injects canned bundles —
+// none of them ever executes the join/aggregation logic actually WRITTEN in
+// data.ts. This file drives the real data.ts functions against a fake
+// drizzle-shaped db (the same fake-pool/fake-db harness style already
+// established in db.test.ts, get-money-scope-request-cache.test.ts, and
+// ingest-csv.test.ts), mocking only the true module boundaries: "@/lib/db"
+// (withSession — no live Postgres), "@taweed/analytics" (a separately tested
+// package), "@taweed/rules-engine" (ditto), and "@/lib/rules-data" (ditto).
+// Exercises:
+//  - denialRateDim's LEFT JOIN rate math (data.ts:66-100), via getAnalytics
+//    and getAuditReportData, including the total_claims === 0 guard.
+//  - getScrubRows' rule-scoping call into selectRulesForClaim and its
+//    money-first riskScore-descending sort (data.ts:133-217).
+//  - appealPipelineRows' row mapping incl. days_open Number() coercion
+//    (data.ts:244-276), via getRecovery and getOwnerReportData.
+//  - getOwnerReportData's baselineFirstPassRate derivation (data.ts:366-391).
+
+// React's real cache() is only exported by Next's bundled React build, not
+// plain "react" under vitest resolution (see get-money-scope-request-cache
+// .test.ts) — substitute a real per-argument memoizing stand-in so
+// getMoneyScope (used by every bundle under test) stays callable.
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return {
+    ...actual,
+    cache: <Args extends unknown[], R>(fn: (...args: Args) => R) => {
+      const memo = new Map<string, R>();
+      return ((...args: Args): R => {
+        const key = JSON.stringify(args);
+        if (!memo.has(key)) memo.set(key, fn(...args));
+        return memo.get(key) as R;
+      }) as (...args: Args) => R;
+    },
+  };
+});
+
+const mockedMoneyScope = vi.fn();
+const mockedReasonPareto = vi.fn();
+const mockedTrend = vi.fn();
+const mockedGetLatestBaseline = vi.fn();
+const mockedRecoverability = vi.fn();
+vi.mock("@taweed/analytics", () => ({
+  moneyScope: (...args: unknown[]) => mockedMoneyScope(...args),
+  reasonPareto: (...args: unknown[]) => mockedReasonPareto(...args),
+  trend: (...args: unknown[]) => mockedTrend(...args),
+  getLatestBaseline: (...args: unknown[]) => mockedGetLatestBaseline(...args),
+  recoverability: (...args: unknown[]) => mockedRecoverability(...args),
+}));
+
+const mockedScrub = vi.fn();
+const mockedSelectRulesForClaim = vi.fn();
+const mockedProjectClaimFacts = vi.fn();
+vi.mock("@taweed/rules-engine", () => ({
+  scrub: (...args: unknown[]) => mockedScrub(...args),
+  SCRUBBER_RULES: [],
+  selectRulesForClaim: (...args: unknown[]) => mockedSelectRulesForClaim(...args),
+  projectClaimFacts: (...args: unknown[]) => mockedProjectClaimFacts(...args),
+}));
+
+const mockedLoadApprovedAuthoredRulesTx = vi.fn();
+vi.mock("@/lib/rules-data", () => ({
+  loadApprovedAuthoredRulesTx: (...args: unknown[]) =>
+    mockedLoadApprovedAuthoredRulesTx(...args),
+}));
+
+const mockedWithSession = vi.fn();
+vi.mock("@/lib/db", () => ({
+  withSession: (...args: unknown[]) => mockedWithSession(...args),
+}));
+
+const FAKE_MONEY = {
+  recoveredSar: "100.00",
+  atRiskSar: "200.00",
+  deniedCount: 1,
+  claimCount: 2,
+};
+
+// One shared queue per db surface — each test seeds it in the exact call
+// order data.ts issues those calls in (see per-test comments), mirroring the
+// selectQueue pattern already used by ingest-csv.test.ts /
+// ingest-bundle-cap.test.ts for this same drizzle-shaped fake db.
+let executeQueue: { rows: unknown[] }[] = [];
+let selectQueue: unknown[][] = [];
+
+function fakeDb() {
+  return {
+    execute: vi.fn(async () => executeQueue.shift() ?? { rows: [] }),
+    select: () => ({
+      from: () => ({
+        orderBy: () => ({
+          limit: () => Promise.resolve(selectQueue.shift() ?? []),
+        }),
+        where: () => Promise.resolve(selectQueue.shift() ?? []),
+      }),
+    }),
+  };
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.clearAllMocks();
+  executeQueue = [];
+  selectQueue = [];
+  mockedMoneyScope.mockResolvedValue(FAKE_MONEY);
+  mockedReasonPareto.mockResolvedValue([]);
+  mockedTrend.mockResolvedValue([]);
+  mockedGetLatestBaseline.mockResolvedValue(null);
+  mockedRecoverability.mockResolvedValue([]);
+  mockedLoadApprovedAuthoredRulesTx.mockResolvedValue([]);
+  mockedWithSession.mockImplementation(
+    async (_tenantId: string, fn: (db: unknown) => unknown) => fn(fakeDb()),
+  );
+});
+
+describe("denialRateDim (private) via getAnalytics / getAuditReportData", () => {
+  it("computes the true denial rate (denied / TOTAL claims), not per-affected-claim", async () => {
+    // getAnalytics issues denialRateDim(db,"payer") then denialRateDim(db,"branch")
+    // inside Promise.all — array literal order fixes db.execute call order.
+    executeQueue = [
+      {
+        rows: [
+          {
+            key: "payer-1",
+            label: "Bupa",
+            total_claims: 10,
+            denied_claims: 4,
+            at_risk_sar: "4000.00",
+          },
+          {
+            key: "payer-2",
+            label: "Tawuniya",
+            total_claims: 5,
+            denied_claims: 0,
+            at_risk_sar: "0.00",
+          },
+        ],
+      },
+      { rows: [] }, // byBranch
+    ];
+    const { getAnalytics } = await import("../lib/data");
+
+    const bundle = await getAnalytics("tenant-a");
+
+    expect(bundle.byPayer).toEqual([
+      {
+        key: "payer-1",
+        label: "Bupa",
+        claims: 10,
+        denied: 4,
+        rate: 0.4,
+        atRiskSar: "4000.00",
+      },
+      {
+        key: "payer-2",
+        label: "Tawuniya",
+        claims: 5,
+        denied: 0,
+        rate: 0,
+        atRiskSar: "0.00",
+      },
+    ]);
+    // overallRate is derived from the SAME byPayer rows getAnalytics returns
+    // (totalClaims/deniedClaims reduced across byPayer), so it must agree.
+    expect(bundle.overallRate).toBeCloseTo(4 / 15);
+  });
+
+  it("guards divide-by-zero: a dimension key with zero total claims reports rate 0, not NaN", async () => {
+    executeQueue = [
+      {
+        rows: [
+          {
+            key: "branch-empty",
+            label: "Unopened branch",
+            total_claims: 0,
+            denied_claims: 0,
+            at_risk_sar: "0.00",
+          },
+        ],
+      },
+    ];
+    const { getAuditReportData } = await import("../lib/data");
+
+    const bundle = await getAuditReportData("tenant-a");
+
+    expect(bundle.byPayer[0].rate).toBe(0);
+    expect(Number.isNaN(bundle.byPayer[0].rate)).toBe(false);
+    expect(bundle.overallRate).toBe(0);
+  });
+});
+
+describe("getScrubRows", () => {
+  const CLAIM_A = {
+    id: "claim-low",
+    patient_id: "pt-1",
+    payer_id: "payer-1",
+    total_amount: "500.00",
+    nphies_claim_id: "N-A",
+  };
+  const CLAIM_B = {
+    id: "claim-high",
+    patient_id: "pt-2",
+    payer_id: "payer-2",
+    total_amount: "900.00",
+    nphies_claim_id: "N-B",
+  };
+  const CLAIM_C = {
+    id: "claim-mid",
+    patient_id: "pt-1",
+    payer_id: "payer-1",
+    total_amount: "700.00",
+    nphies_claim_id: "N-C",
+  };
+  const PATIENTS = [
+    { id: "pt-1", pseudonym: "PT-0001" },
+    { id: "pt-2", pseudonym: "PT-0002" },
+  ];
+  const PAYERS = [
+    { id: "payer-1", name: "Bupa" },
+    { id: "payer-2", name: "Tawuniya" },
+  ];
+  const RISK_BY_CLAIM: Record<string, number> = {
+    "claim-low": 10,
+    "claim-high": 90,
+    "claim-mid": 50,
+  };
+
+  beforeEach(() => {
+    // Call order inside getScrubRows: claims (orderBy+limit), then Promise.all
+    // of [claimLines, patients, payers] (each a .where() call, synchronously
+    // invoked in that array-literal order).
+    selectQueue = [
+      [CLAIM_A, CLAIM_B, CLAIM_C], // claims
+      [], // claim_lines (unused by this fake — facts come from the mock)
+      PATIENTS,
+      PAYERS,
+    ];
+    mockedProjectClaimFacts.mockImplementation((claim: { id: string }) => ({
+      sbsCodes: [`SBS-${claim.id}`],
+    }));
+    mockedSelectRulesForClaim.mockImplementation(
+      (_library: unknown[], scope: { payerId: string; tenantId: string }) => [
+        { id: `rule-${scope.payerId}`, version: 1 },
+      ],
+    );
+    mockedScrub.mockImplementation(async (facts: { sbsCodes: string[] }) => {
+      const claimId = facts.sbsCodes[0].replace("SBS-", "");
+      return {
+        claimId,
+        riskScore: RISK_BY_CLAIM[claimId],
+        flags: [],
+        unevaluable: [],
+      };
+    });
+  });
+
+  it("scopes the rule library to each claim's payer/tenant before scrubbing", async () => {
+    const { getScrubRows } = await import("../lib/data");
+
+    await getScrubRows("tenant-a", 60);
+
+    expect(mockedSelectRulesForClaim).toHaveBeenCalledWith(expect.anything(), {
+      payerId: "payer-1",
+      tenantId: "tenant-a",
+    });
+    expect(mockedSelectRulesForClaim).toHaveBeenCalledWith(expect.anything(), {
+      payerId: "payer-2",
+      tenantId: "tenant-a",
+    });
+    // Called once per claim (3 claims), not once per unique payer.
+    expect(mockedSelectRulesForClaim).toHaveBeenCalledTimes(3);
+  });
+
+  it("sorts rows money-first: highest riskScore first (design-brief §8.6)", async () => {
+    const { getScrubRows } = await import("../lib/data");
+
+    const rows = await getScrubRows("tenant-a", 60);
+
+    expect(rows.map((r) => r.claimId)).toEqual([
+      "claim-high", // riskScore 90
+      "claim-mid", // riskScore 50
+      "claim-low", // riskScore 10
+    ]);
+    expect(rows.map((r) => r.result.riskScore)).toEqual([90, 50, 10]);
+  });
+
+  it("resolves patient/payer labels via the batched lookup maps, not per-row queries", async () => {
+    const { getScrubRows } = await import("../lib/data");
+
+    const rows = await getScrubRows("tenant-a", 60);
+    const highRow = rows.find((r) => r.claimId === "claim-high");
+
+    expect(highRow?.patientLabel).toBe("PT-0002");
+    expect(highRow?.payerName).toBe("Tawuniya");
+  });
+});
+
+describe("appealPipelineRows (private) via getRecovery / getOwnerReportData", () => {
+  const RAW_ROWS = {
+    rows: [
+      {
+        appeal_id: "appeal-1",
+        claim_id: "claim-1",
+        nphies_claim_id: "N-1",
+        payer_name: "Bupa",
+        status: "won",
+        appealed_sar: "1000.00",
+        recovered_sar: "800.00",
+        days_open: "14", // Postgres numeric/EXTRACT often arrives as a string
+      },
+      {
+        appeal_id: "appeal-2",
+        claim_id: "claim-2",
+        nphies_claim_id: null,
+        payer_name: "Tawuniya",
+        status: "pending",
+        appealed_sar: "500.00",
+        recovered_sar: null,
+        days_open: 3,
+      },
+    ],
+  };
+
+  it("maps SQL rows to AppealPipelineRow, coercing days_open to a number", async () => {
+    // getRecovery: Promise.all([getMoneyScope, getLatestBaseline, appealPipelineRows])
+    // then a separate agg execute() call, in that order.
+    executeQueue = [
+      RAW_ROWS,
+      { rows: [{ won: 1, lost: 0, median_days: 14 }] },
+    ];
+    const { getRecovery } = await import("../lib/data");
+
+    const bundle = await getRecovery("tenant-a");
+
+    expect(bundle.rows).toEqual([
+      {
+        appealId: "appeal-1",
+        claimId: "claim-1",
+        nphiesClaimId: "N-1",
+        payerName: "Bupa",
+        status: "won",
+        appealedSar: "1000.00",
+        recoveredSar: "800.00",
+        daysOpen: 14,
+      },
+      {
+        appealId: "appeal-2",
+        claimId: "claim-2",
+        nphiesClaimId: null,
+        payerName: "Tawuniya",
+        status: "pending",
+        appealedSar: "500.00",
+        recoveredSar: null,
+        daysOpen: 3,
+      },
+    ]);
+    expect(typeof bundle.rows[0].daysOpen).toBe("number");
+  });
+
+  it("feeds getOwnerReportData's topPayers aggregation with the same mapped rows", async () => {
+    // getOwnerReportData: Promise.all([denialRateDim, trend, getLatestBaseline,
+    // appealPipelineRows]) — denialRateDim's execute() call precedes
+    // appealPipelineRows' in that array-literal order.
+    executeQueue = [{ rows: [] }, RAW_ROWS];
+    const { getOwnerReportData } = await import("../lib/data");
+
+    const bundle = await getOwnerReportData("tenant-a");
+
+    expect(bundle.topPayers).toEqual([
+      { name: "Bupa", recoveredSar: "800.00" },
+    ]);
+  });
+});
+
+describe("getOwnerReportData baselineFirstPassRate derivation", () => {
+  beforeEach(() => {
+    executeQueue = [{ rows: [] }, { rows: [] }];
+  });
+
+  it("derives baseline first-pass rate as 1 - deniedCount/claimCount", async () => {
+    mockedGetLatestBaseline.mockResolvedValue({
+      id: "baseline-1",
+      capturedAt: "2026-01-01T00:00:00Z",
+      atRiskSar: "10000.00",
+      deniedCount: 25,
+      claimCount: 100,
+      note: null,
+    });
+    const { getOwnerReportData } = await import("../lib/data");
+
+    const bundle = await getOwnerReportData("tenant-a");
+
+    expect(bundle.baselineFirstPassRate).toBeCloseTo(0.75);
+  });
+
+  it("is null when no baseline was ever captured", async () => {
+    mockedGetLatestBaseline.mockResolvedValue(null);
+    const { getOwnerReportData } = await import("../lib/data");
+
+    const bundle = await getOwnerReportData("tenant-a");
+
+    expect(bundle.baselineFirstPassRate).toBeNull();
+  });
+
+  it("is null (not NaN/Infinity) when the baseline's claimCount is 0", async () => {
+    mockedGetLatestBaseline.mockResolvedValue({
+      id: "baseline-2",
+      capturedAt: "2026-01-01T00:00:00Z",
+      atRiskSar: "0.00",
+      deniedCount: 0,
+      claimCount: 0,
+      note: null,
+    });
+    const { getOwnerReportData } = await import("../lib/data");
+
+    const bundle = await getOwnerReportData("tenant-a");
+
+    expect(bundle.baselineFirstPassRate).toBeNull();
+  });
+});

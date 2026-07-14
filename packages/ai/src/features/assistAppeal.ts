@@ -1,15 +1,12 @@
 import "server-only";
-import { withTenant, type Pool } from "@taweed/db";
+import type { Pool } from "@taweed/db";
 import { glossaryPromptLines } from "@taweed/shared";
-import { AiConfigError, AiDisabledError } from "../errors.js";
-import { isFeatureEnabled, missingProviderConfig } from "../config.js";
 import {
   normalizeArabicOutput,
   normalizeArabicDigits,
 } from "../postprocess-ar.js";
 import { pseudonymize } from "../pseudonymize.js";
-import { runStructured, isTenantAiEnabled } from "../run.js";
-import { createAnthropicProvider } from "../anthropic-1p.js";
+import { runStructured, resolveAiGate } from "../run.js";
 import type { LlmProvider } from "../provider.js";
 import {
   buildFactSlots,
@@ -146,18 +143,13 @@ export async function assistAppeal(
   const env = opts.env ?? process.env;
   const now = opts.now ?? new Date();
 
-  if (!isFeatureEnabled("appeal", env)) {
-    throw new AiDisabledError("feature 'appeal' is disabled");
-  }
-  const tenantOk = await withTenant(opts.pool, opts.tenantId, (db) =>
-    isTenantAiEnabled(db),
-  );
-  if (!tenantOk) throw new AiDisabledError("tenant AI flag is off");
-  if (opts.provider === undefined) {
-    const missing = missingProviderConfig(env);
-    if (missing) throw new AiConfigError(missing);
-  }
-  const provider = opts.provider ?? createAnthropicProvider();
+  const provider = await resolveAiGate({
+    feature: "appeal",
+    env,
+    pool: opts.pool,
+    tenantId: opts.tenantId,
+    provider: opts.provider,
+  });
 
   // 1. Pseudonymize the one PHI identifier (member id) — the load-bearing PHI
   //    control. Free text is not included, so nothing PHI-dense reaches the model.

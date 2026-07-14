@@ -111,4 +111,46 @@ describe("parseBundle", () => {
     expect(pairs).toHaveLength(1);
     expect(pairs[0]!.claim.provider?.reference).toBe("Organization/o1");
   });
+
+  // GATED (money/PHI): addClaimKey only blocks the colliding `Claim/{id}`
+  // key; the duplicate claim's own entry.fullUrl key is unaffected and can
+  // still be resolved by a ClaimResponse, letting the "discarded" duplicate
+  // (different provider/line items) flow into normalize()/insertNormalizedClaim.
+  // This documents the bug without changing money/PHI source logic.
+  it.fails(
+    "does not let a duplicate Claim.id leak through a different entry.fullUrl and pair with a ClaimResponse",
+    () => {
+      const b = {
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          { fullUrl: "urn:uuid:aaa", resource: { ...claim, id: "CL1" } },
+          {
+            fullUrl: "urn:uuid:bbb",
+            resource: {
+              ...claim,
+              id: "CL1",
+              provider: { reference: "Organization/o-duplicate" },
+            },
+          },
+          {
+            resource: {
+              ...claimResponse,
+              request: { reference: "urn:uuid:bbb" },
+            },
+          },
+        ],
+      };
+
+      const { pairs, issues } = parseBundle(b);
+
+      expect(issues.join(" ")).toMatch(/duplicate Claim/i);
+      // The duplicate claim was logged as discarded; its data (e.g. this
+      // provider reference) must not reach any pair.
+      const leaked = pairs.some(
+        (p) => p.claim.provider?.reference === "Organization/o-duplicate",
+      );
+      expect(leaked).toBe(false);
+    },
+  );
 });

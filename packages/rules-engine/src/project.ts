@@ -1,4 +1,5 @@
 import type { ClaimFacts } from "./types.js";
+import type { ClaimLineRow, ClaimRow, PatientRow } from "@taweed/shared";
 
 // EXECUTE B5 — project a canonical claim (+ its lines + patient) into ClaimFacts.
 //
@@ -14,6 +15,14 @@ import type { ClaimFacts } from "./types.js";
 // The narrow Projection* interfaces are a structural subset of the canonical
 // @taweed/shared rows (which drizzle's $inferSelect rows also satisfy), so the app
 // passes DB rows straight in without an adapter, and unit tests build tiny literals.
+// @taweed/shared is the SOURCE OF TRUTH for these fields; the `Assert*` block below
+// is a type-only, zero-runtime-cost link (rules-engine takes @taweed/shared as a
+// devDependency only) that pins every Projection* field to a same-named,
+// type-compatible field on the canonical row — the same technique registry.ts uses
+// (`satisfies`) to pin CLAIM_FACT_KEYS to ClaimFacts. If @taweed/shared ever renames,
+// drops, or incompatibly narrows a field one of these interfaces relies on, the
+// `extends` check below fails to typecheck instead of silently starving the rules
+// engine of a real column.
 
 export type DataOrigin = "synthetic" | "production";
 
@@ -40,6 +49,25 @@ export interface ProjectionPatient {
   birth_year: number | null;
   gender: string | null;
 }
+
+// True only if every field of the Projection* interface (left) is present, by the
+// same name, on the canonical @taweed/shared row (right) with a compatible type.
+type AssertIsSubsetOf<Projection, _CanonicalRow extends Projection> = true;
+// Referencing (never calling) these keeps the checks live without adding a runtime
+// export or a devDependency-only import getting stripped as "unused" under
+// verbatimModuleSyntax.
+export type _ClaimRowCoversProjectionClaim = AssertIsSubsetOf<
+  ProjectionClaim,
+  ClaimRow
+>;
+export type _ClaimLineRowCoversProjectionLine = AssertIsSubsetOf<
+  ProjectionLine,
+  ClaimLineRow
+>;
+export type _PatientRowCoversProjectionPatient = AssertIsSubsetOf<
+  ProjectionPatient,
+  PatientRow
+>;
 
 const GENDERS: ReadonlyArray<ClaimFacts["patientGender"]> = [
   "male",

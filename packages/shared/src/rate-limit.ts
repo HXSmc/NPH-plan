@@ -33,7 +33,7 @@ export function checkRateLimit(
 ): RateDecision {
   if (prev === undefined || now - prev.windowStart >= windowMs) {
     return {
-      allowed: true,
+      allowed: limit > 0,
       remaining: Math.max(0, limit - 1),
       resetInMs: windowMs,
       next: { count: 1, windowStart: now },
