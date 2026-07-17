@@ -107,7 +107,8 @@
     "atRiskSar": "At risk (SAR)",
     "emptyTitle": "No claims yet",
     "emptyBody": "Ingest 3 to 6 months of remittances to see your denial map.",
-    "buildAuditReport": "Build the free-audit report"
+    "buildAuditReport": "Build the free-audit report",
+    "buildOwnerReport": "Build the owner report"
   },
   "ingest": {
     "title": "Ingest",

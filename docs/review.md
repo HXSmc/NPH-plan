@@ -237,8 +237,11 @@ Click **Analytics**.
 
 - Top strip: the **denial rate** as a huge red percentage, plus **at-risk SAR**.
 - Charts: a **trend line** (denials over ~6 months), a **Pareto** chart (denials by reason, ranked), **by payer** ranked bars, **by branch** ranked bars.
-- Top-right of the page header: **Build the free-audit report** (EXECUTE A3, `/analytics/audit-report`) — a bilingual, print/PDF-able leave-behind document: cover denial-rate/at-risk figures, leak by payer, top reasons (reusing this same Pareto), a recoverable-vs-structural split, and a projected recovery range. Click the **Print or save as PDF** button on that page (it calls the browser's own print dialog — there is no server-side PDF pipeline, by design) to see the app chrome (rail/command bar) disappear via `print:` CSS, leaving just the report.
-- **What to verify:** charts actually render (they use hard-coded HEX colors deliberately — CSS variables don't work inside SVG). Hover a bar/point; numbers should be sensible.
+- Top-right of the page header, **two** actions now (added 2026-07-17 — rcm's default landing page is Analytics, and the owner report previously had no link from here, only a card on Overview that rcm never lands on by default):
+  - **Build the owner report** → `/recovery/owner-report`, the same one-page print/PDF-able summary described in Step 1.
+  - **Build the free-audit report** (EXECUTE A3, `/analytics/audit-report`) — a bilingual, print/PDF-able leave-behind document: cover denial-rate/at-risk figures, leak by payer, top reasons (reusing this same Pareto), a recoverable-vs-structural split, and a projected recovery range. Click the **Print or save as PDF** button on that page (it calls the browser's own print dialog — there is no server-side PDF pipeline, by design) to see the app chrome (rail/command bar) disappear via `print:` CSS, leaving just the report.
+- **What to verify:** charts actually render (they use hard-coded HEX colors deliberately — CSS variables don't work inside SVG). Hover a bar/point; numbers should be sensible. Both header buttons live-verified EN/AR × light/dark (chrome-devtools MCP, 2026-07-17): correct locale-prefixed URLs, real (non-machine-translated) Arabic label reusing the existing "تقرير المالك" term, proper RTL mirroring, good contrast both themes.
+- **What to verify (branch selector):** picking a branch in the command bar (top of the page) narrows this page's numbers/charts to that branch only — e.g. at-risk SAR and the trend/Pareto/payer bars recompute; picking **All branches** reverts to the full-tenant figures. Analytics and Scrubber (Step 4) are the only two modules with **real** branch filtering wired in — Ingest/Appeals/Recovery show the same switcher chrome but deliberately do **not** filter on it, so seeing no change there is expected, not a bug. An invalid or foreign `?branch=` value typed directly into the URL is silently ignored (falls back to All branches) rather than erroring — it can never widen scope beyond this tenant's own branches.
 
 ### Step 3 — Ingest (data intake)
 Click **Ingest**. (Only visible to rcm/finance/admin — that's why we're using rcm.)
@@ -317,6 +320,18 @@ Click **Scrubber**.
   - With AI **off** (the default — see §1.10): clicking it shows a muted *"explanation unavailable"* note. This is the intended graceful-degradation behavior — **not** a bug.
   - With AI **on**: clicking it fetches a bilingual plain-language explanation + a suggested fix, shown inline. Click again to collapse. (It's cached, so a second click on the same flag is instant and doesn't re-call the model.)
 - **What to verify (AI off):** deterministic messages always show; Explain degrades gracefully. **(AI on):** you get a real explanation in the current language; toggle to Arabic and it's in Arabic.
+- **What to verify (branch selector):** picking a branch in the command bar (top of the page) narrows this table to that branch's claims only; picking **All branches** shows every branch again. Unlike Analytics (Step 2), Scrubber is one of the two modules with **real** branch filtering — Ingest/Appeals/Recovery show the same switcher chrome but deliberately do **not** filter on it, so seeing no change there is expected, not a bug. An invalid or foreign `?branch=` value typed directly into the URL is silently ignored (falls back to All branches) rather than erroring.
+
+### Step 4a — Command-bar search
+
+The search box in the top command bar (shared shell chrome — visible on every page, not just here) was a dead `<input type="search">` with no handler; it's now wired, and its effect lands on this page.
+
+- **What it does:** type a query and press **Enter** — it navigates to `/scrubber?q=<query>`, which substring-filters the already-loaded claim rows by **claim id**, **NPHIES id**, or **payer name** (no new search index/API/dependency — it filters what Scrubber already has in memory).
+- **Steps:**
+  1. From any page, click into the search box and type a claim id, NPHIES id, or payer name (or a partial match) you know exists in the seeded data.
+  2. Press **Enter**. You land on Scrubber at `/scrubber?q=<your query>`, and the table shows only the matching rows.
+  3. Press Enter with the box empty or whitespace-only — nothing happens, no navigation (a deliberate no-op, so an empty search doesn't fire a bare `?q=` request).
+- **What to verify:** the query persists in the URL (shareable, survives reload); the match is substring, not exact — a partial payer name still filters correctly.
 
 ### Step 5 — Appeals (+ AI-2: Appeal Assist)
 Click **Appeals**.

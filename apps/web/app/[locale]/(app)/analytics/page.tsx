@@ -79,9 +79,17 @@ export default async function AnalyticsPage({
       <PageHeader
         title={t("title")}
         action={
-          <Button variant="secondary" asChild>
-            <Link href="/analytics/audit-report">{t("buildAuditReport")}</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* rcm lands here by default (rbac.landingModule) and has no other
+                route to the owner report, which otherwise only links from an
+                Overview card rcm never sees on landing. */}
+            <Button variant="secondary" asChild>
+              <Link href="/recovery/owner-report">{t("buildOwnerReport")}</Link>
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link href="/analytics/audit-report">{t("buildAuditReport")}</Link>
+            </Button>
+          </div>
         }
       />
 

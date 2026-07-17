@@ -177,11 +177,19 @@ function buildOneClaim(
     }
   });
 
-  // Simplification (documented, not hidden): the wire schema has no adjudication
-  // status field beyond the money totals, so outcome is derived from whether
-  // anything was rejected. "error" (FHIR processing failure) is never inferred
-  // from a remittance — only "complete" or "partial".
-  const outcome: ClaimOutcome = claim.totalRejectedHalalas > 0 ? "partial" : "complete";
+  // FHIR ClaimResponse.outcome (required binding to RemittanceOutcome,
+  // hl7.org/fhir/R4/valueset-remittance-outcome.html): "complete" means
+  // adjudication finished without errors — it says nothing about whether the
+  // claim was paid, partially denied, or denied in full. "error" means the
+  // *processing itself* failed; "partial" means adjudication is still in
+  // progress. A buildOneClaim call only ever runs on an EobExtraction that
+  // already passed eob-validators.ts's arithmetic gate (see
+  // actions/eob-review.ts's approve path) — a genuinely failed/inconsistent
+  // extraction is routed to human review before it ever reaches this
+  // converter, so there is no processing-error signal to map to "error" here
+  // either. A cleanly-adjudicated-but-denied claim is "complete", same as the
+  // CSV ingest path (csv-to-claims.ts).
+  const outcome: ClaimOutcome = "complete";
 
   const response: ClaimResponseRow = {
     id: newId(),

@@ -70,12 +70,28 @@
 > calculation (negligible savings at pre-pilot volume; no compliance benefit as designed; not the
 > highest-value next step) with revisit triggers; cross-linked from `review.md`, `handoff.md` (this
 > doc's must-read index), and `blocker.md` (commit `552dbcb`). No test/typecheck deltas — docs only.
-> **2026-07-17: FHIR R4 validator full audit — DONE.** `packages/fhir`'s base-R4
-> validator gained full nested-element SHALL checks (was 7-8 top-level fields only); a real
+> **2026-07-17: FHIR R4 validator full audit — DONE, pushed (`main` = `0c8f800`).** `packages/fhir`'s
+> base-R4 validator gained full nested-element SHALL checks (was 7-8 top-level fields only); a real
 > `ClaimResponse.outcome` semantics bug (denial-amount-keyed instead of processing-status-keyed)
 > found and fixed beyond cardinality gaps. NPHIES-profile stub confirmed correctly untouched
-> (boundary research: public conformance page is license-gated-too, no exception). See the new
-> bullet in "Where the project stands" and `docs/NEXT_STEP_PROMPT.md` for the follow-up item.
+> (boundary research: public conformance page is license-gated-too, no exception).
+> **2026-07-17, same day: both queued next-step items done in parallel (no file overlap), pushed.**
+> (1) The `eob-to-normalized.ts:184` twin of the outcome-semantics bug — investigated first (did not
+> assume it matched the CSV path blind): traced the AI-4 EOB-OCR pipeline and confirmed a failed/
+> inconsistent extraction is rejected in `eob-review.ts` *before* the normalizer ever runs, so there
+> is no reachable processing-error signal on this path either — same fix, `outcome` is unconditionally
+> `"complete"`. (2) Owner-report discoverability — a second header link ("Build the owner report") on
+> `/analytics` next to the existing audit-report CTA, real (non-machine-translated) Arabic label, new
+> component test, live-verified via chrome-devtools MCP across EN/AR × light/dark (a mid-session dev-
+> server restart was needed — a corrupted `.next` webpack chunk manifest from prior hot-reload churn,
+> same known class of issue noted elsewhere in this file, fixed by `rm -rf apps/web/.next` + restart).
+> See the new bullet in "Where the project stands" and `docs/NEXT_STEP_PROMPT.md` for what's next.
+> **2026-07-17, `/autopilot` pass, same day: `docs/review.md` gap-filled + entire §1.8 walkthrough
+> live-driven via chrome-devtools MCP, Sonnet 5 throughout (no GLM).** Zero product code defects
+> found; one self-inflicted environmental issue (shared dev DB wiped by this session's own earlier
+> integration-test runs, not re-seeded) fixed via re-seed. 3 parallel Sonnet reviewers (architecture/
+> correctness, security, quality) — all ACCEPT, round 1. Full breakdown in "Where the project
+> stands" below.
 
 ## Where the project stands
 
@@ -515,7 +531,79 @@
   that was structurally prevented — worth worktree-isolating or sequencing overlapping-file fix
   agents in future waves. Verified: **452 suites / 1075 tests, 1072 pass, 0 fail, 3 skipped** (unit
   + integration, against the repo's own `docker compose` Postgres). 9 files changed, 461
-  insertions / 27 deletions. **Not committed** — awaiting the user's go-ahead.
+  insertions / 27 deletions. **Committed and pushed** (`main` = `66342be`, doc-sync follow-up
+  `0c8f800`) — see "Git workflow & safety" below for the full ritual, including a fast-forward onto
+  3 concurrent docs-only commits from `origin/main` and a by-hand-resolved conflict in this file's
+  own top blockquote.
+- **Both queued `docs/NEXT_STEP_PROMPT.md` items done in one pass, 2026-07-17 (no file overlap, ran
+  in parallel — the prior pass's collision lesson applied this time by construction, not luck):**
+  - **EOB-outcome-bug twin, fixed properly, not copy-pasted blind.** Before touching
+    `apps/web/lib/eob-to-normalized.ts:184`, traced the AI-4 EOB-OCR pipeline
+    (`packages/ai/src/features/extractEob.ts`, `packages/ai/src/eob-validators.ts`) and its caller
+    `apps/web/lib/actions/eob-review.ts` to check whether this path — unlike the CSV path — ever
+    carries a genuine processing-error signal that should legitimately map to FHIR `"error"`.
+    Confirmed empirically: `eob-review.ts` rejects a failed/inconsistent extraction *before*
+    `buildNormalizedClaimsFromEob` is ever called, so no failed extraction reaches the normalizer —
+    same conclusion as the CSV path, `outcome` is unconditionally `"complete"`. Fixed +
+    `apps/web/test/eob-to-normalized.test.ts:166` updated; `test/synthetic-eob/src/scenarios.ts`
+    checked and confirmed clean (it only emits wire-shaped money data, never encodes an `outcome`
+    field, unlike `test/synthetic-fhir/src/scenarios.ts` which did and was already fixed). Confirmed
+    via advisor + grep that `denialRateDim` keys off the `denials` table, not `outcome` — this fix
+    cannot regress denial-rate/at-risk analytics.
+  - **Owner-report discoverability, fixed** (this file's carried-forward item, finally picked up
+    after two sessions untouched). A second header action on `/analytics`
+    (`apps/web/app/[locale]/(app)/analytics/page.tsx`) — "Build the owner report" → same
+    `Link`/`Button` pattern as the existing "Build the free-audit report" CTA. Real (non-machine-
+    translated) Arabic label reusing the existing "تقرير المالك" term from `overview.buildReport`,
+    not a fresh translation. New RTL component test rendering the real `AnalyticsPage` server
+    component. Deliberately **not** RBAC-gated on the new link itself — matches the existing
+    ungated `Overview` `ForwardCard` to the same route, and the owner-report page already enforces
+    RBAC server-side; adding client-side gating here would be inconsistent scope creep.
+    **Live-verified via chrome-devtools MCP** across all four EN/AR × light/dark combinations —
+    correct locale-prefixed URLs, proper RTL mirroring, good contrast both themes, click-through to
+    the real page confirmed. A stale, corrupted `.next` webpack chunk manifest (same known class of
+    issue as a prior session's note) blocked the first verify attempt on `/analytics` — fixed with
+    `rm -rf apps/web/.next` + a clean dev-server restart, unrelated to the code change itself.
+  - Verified together: **454 suites / 1076 tests, 1073 pass, 0 fail, 3 skipped** (2 new suites/tests
+    vs. the prior 452/1075/1072 baseline, no regression), typecheck clean, lint at the same one
+    pre-existing unrelated `.claude/workflows/multi-lens-review.js` error, `pnpm --filter
+    @taweed/web build` green. `docs/review.md`'s Analytics walkthrough (Step 2) updated to describe
+    both header links now present.
+- **`/autopilot` pass, 2026-07-17, same day: `docs/review.md` gap-filled for two shipped-but-
+  undocumented features, then the ENTIRE §1.8 walkthrough live-driven via chrome-devtools MCP
+  (Sonnet 5 throughout, no GLM — weekly quota at 100%).** Added `### Step 4a — Command-bar
+  search` (Enter navigates to `/scrubber?q=<query>`, substring-filters by claim id/NPHIES id/
+  payer name) and branch-selector "what to verify" bullets on Step 2 + Step 4 (real filtering on
+  Analytics + Scrubber only, by design; Ingest/Appeals/Recovery deliberately unfiltered; invalid
+  `?branch=` silently ignored). Both verified against real code/tests before writing, not
+  assumed. **Full drive-through, Steps 1-9 + the two new ones:** Ingest exercised end-to-end with
+  the real `/api/sample-bundle` output (uploaded via a temporarily-unhidden file input, since the
+  dropzone's real `<input type="file">` needed a DOM workaround for chrome-devtools' `uid`-based
+  `upload_file`) — "1 claims, 1 denials detected, SAR 408 at risk," 0 quarantined, confirming
+  today's earlier FHIR R4 validator fix works live, not just in tests. Search + branch filters
+  combine correctly (`?q=` preserved across a branch pick) and re-verified in Arabic. Recovery's
+  "Mark won" moves money correctly (Recovered SAR increased by exactly the claim amount) — a
+  "Won 25 of 160" → "Won 25 of 161" heading shift initially looked like a possible off-by-one but
+  was traced to source (`recovery/page.tsx`'s `shownOfTotal`, a truncation indicator, not a
+  status counter) and confirmed correct, not a bug. Tenant isolation (Step 9) reconfirmed live —
+  signing into the other tenant shows completely different figures/branches, zero leakage. AR +
+  dark-theme spot-checked on Scrubber with an active filter (per plan: full EN/light everywhere,
+  targeted AR/dark on the money-path modules + the two brand-new features, not blind 4× coverage).
+  **One real issue found, self-inflicted and environmental, not a product bug:** the login
+  account picker rendered empty (`<ul>` with 0 children) — root-caused to this session's own
+  earlier Verify-phase agents having run the full `vitest run` (including the destructive
+  "integration" project) against this same shared dev Postgres without re-seeding after, per
+  `docs/review.md`'s own documented warning. Fixed with `pnpm --filter @taweed/web seed`; **the
+  hub's own later gate run repeated the same wipe and was re-seeded again immediately after** —
+  a process lesson for future sessions running integration tests against a live interactive dev
+  DB. **Zero code defects found in the live walkthrough itself.** Validated: 3 parallel Sonnet
+  reviewers (architecture/correctness, security, quality) — **all ACCEPT, round 1.** Security
+  review independently re-verified (not taken on faith) that the new Analytics→owner-report link
+  matches the existing ungated Overview-card precedent, and that the real RBAC gate
+  (`isVisible(session.role, "recovery")`, server-side) on the owner-report page itself is
+  untouched. Architecture review independently traced `eob-review.ts` to confirm no failed
+  extraction can reach the outcome-fix call site. Gates fresh before validation: typecheck clean,
+  full suite 454/1076/1073/0/3 (same as above), lint at baseline, production build green.
 - Roadmap: CREATE ✅ → IMPLEMENT ✅ → **EXECUTE (buildable pass ✅ · UI tail A2/A3 ✅ · B6 field-mapping panel ✅ · headline pending real data)** → **AI phase (AI-0 ✅ · AI-1 ✅ · AI-2 ✅ · AI-3 ✅ · AI-4 ✅ + real-data-gaps closed ✅ · AI-5 deferred)** → DEPLOY.
 
 ## Can you start now?

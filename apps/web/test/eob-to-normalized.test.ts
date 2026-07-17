@@ -160,10 +160,14 @@ describe("buildNormalizedClaimsFromEob — adjustment bucket (write-off) is not 
 
     // Assert: only the genuinely rejected 20 SAR is recorded as a denial —
     // the 20 SAR adjustment is not folded into it and not double-counted.
+    // outcome is "complete" per FHIR RemittanceOutcome semantics — a
+    // cleanly-adjudicated-but-partially-denied claim is still a completed
+    // adjudication, never "partial" (that value means processing is still
+    // in progress, not that some money was denied).
     expect(normalized!.denials).toHaveLength(1);
     expect(normalized!.denials[0]!.denied_amount).toBe(toSar(2_000));
     expect(normalized!.response.adjudicated_amount).toBe(toSar(6_000));
-    expect(normalized!.response.outcome).toBe("partial");
+    expect(normalized!.response.outcome).toBe("complete");
   });
 });
 
