@@ -4,7 +4,52 @@ Tracks upstream findings from dependency audits that don't warrant an
 immediate code change but shouldn't be silently forgotten. Update this file
 when a watch-item resolves (upstream releases, migration lands, etc.).
 
-Last audit: 2026-07-08.
+> **Location note (2026-07-18):** moved from `docs/deps.md` into `docs/audit docs/` (literal
+> space in the directory name) as part of the same audit-doc consolidation that moved
+> `bugs.md`/`secure.md` — see `audit.md`'s own location note. Force-added (`git add -f`) to stay
+> tracked despite the directory being gitignored, same pattern.
+
+Last audit: 2026-07-18 (item 4 of the `/audit-workflow` queue — see Pass #17 below).
+
+## Pass #17 — 2026-07-18 (item 4, agy 3-agent research + hub independent verification)
+
+**Ground truth: `pnpm audit --json` → 0 vulnerabilities across 812 total dependencies** (info/low/
+moderate/high/critical all 0, empty advisories array). Confirms the fixes below (2026-07-08) still
+hold and nothing new has regressed via `pnpm audit`'s own registry snapshot.
+
+Sent to agy (`/research`, 3-agent cross-review) to catch anything a local `pnpm audit` snapshot
+might miss. **Agy's raw output claimed 4 "active" CVEs plus an abandoned-npm-package finding — the
+hub independently verified every one of these against the primary source (NVD/GitHub Security
+Advisories directly, via `WebFetch`) before trusting any of it, per the reviewer-bar rule "a
+spoke's ✅ is a claim, not evidence." Every single one turned out to be a real CVE/advisory
+misapplied to the wrong installed version, or (in one case) a dependency this repo doesn't even
+have:**
+
+| Agy's claim | Real CVE/advisory (verified) | Actual affected range | This repo's installed version | Verdict |
+|---|---|---|---|---|
+| "Zod 3.25.76 vulnerable to SQLi" | CVE-2026-6991 — real | Zod **4.3.0–4.3.6** only | `3.25.76` | **NOT AFFECTED** — different major line entirely |
+| "Vitest <4.1.6 vulnerable, upgrade needed" | CVE-2026-47428 — real, CVSS 9.6 critical XSS/token-theft in Browser Mode | Vitest **4.0.17–4.1.5** (+5.0.0-beta.0–2) | `3.2.7` | **NOT AFFECTED** — repo is a full major below the affected range |
+| "next-auth <4.24.12 email misdelivery" | GHSA-5jpx-9hw9-2fx4 — real | next-auth **<4.24.12** / **<5.0.0-beta.30** | `^5.0.0-beta.31` (confirmed in `apps/web/package.json`) | **NOT AFFECTED** — already past the fixed beta (this repo's own 2026-07-08 floor bump to `beta.31` already cleared it, likely coincidentally) |
+| "Next.js 15.5.20 vulnerable (React2Shell)" — **agy's own 3 analysts disputed this one internally** | The cited blog post (`react.dev/.../react-server-components-rce`) **404s — does not exist**. The real CVE for "React2Shell" is CVE-2025-55182 (confirmed real, CVSS 10.0, CISA KEV-listed) but affects `react-server-dom-{parcel,turbopack,webpack}` **19.0.0/19.1.0/19.1.1/19.2.0** specifically, not Next.js itself | React **19.0.0–19.2.0** | React `18.3.1` | **NOT AFFECTED** — repo is on React 18, this is a React-19-only RCE. **Important future constraint: if/when this repo ever bumps to React 19, it MUST land on ≥19.2.1, never 19.0.0–19.2.0 exactly**, or it lands directly on a CISA-KEV-listed pre-auth RCE. Record this against the existing "react 18→19, deferred major" watch-item below. |
+| (separately, real+correctly-cited) Next.js middleware auth-bypass | CVE-2025-29927 — real, CVSS 9.1 critical, confirmed | Next.js **15.0.0–<15.2.3** | `15.5.20` | **NOT AFFECTED** — already well past the fixed version |
+| (separately, real+correctly-cited) Drizzle-orm identifier-escaping SQLi | GHSA-gpj5-g38j-94v9 — real (agy mislabeled it "CVE-2026-39356", which doesn't match; the real advisory has no separate CVE number shown) | drizzle-orm **≤0.45.1** | `0.45.2` exact | **NOT AFFECTED** — repo is pinned to the exact fixed version already |
+| "npm package `fhir` deprecated/abandoned" (2 of 3 analysts) vs. "active, v5.0.2 released" (1 analyst) — agy's own analysts disputed this too | N/A | N/A | **This repo has zero dependency on any npm `fhir`/`fhirclient`/`fhir-kit-client` package** — confirmed via `grep` across every `package.json`. `packages/fhir` is this repo's OWN internal package (FHIR R4 parsing/validation logic), not an npm dependency of that name. | **Not applicable — confused this repo's own package directory with an unrelated npm package of the same name.** |
+
+**Net result: 0 confirmed current vulnerabilities** (matches `pnpm audit`'s clean read) **— but 2
+genuinely useful landmine constraints captured for the already-tracked deferred major bumps below**
+(vitest 3→4 must land ≥4.1.6; react 18→19 must land ≥19.2.1). Nothing fixed this pass (nothing to
+fix); no code changed.
+
+**Process lesson (recorded in `audit.md`'s Learnings too):** agy's 3-agent cross-review can produce
+internally-"verified" (2-of-3-agents-agree) claims that are still wrong in a way that matters —
+every hallucination this pass was a REAL CVE/advisory correctly sourced, just checked against the
+wrong installed version (or, in the `fhir` case, a same-named-but-unrelated package). Cross-review
+agreement between agy's own sub-agents caught zero of these — all 4 non-disputed "verified" claims
+were equally wrong; only the 2 items agy's analysts happened to disagree on got flagged for the
+hub's attention at all, and even those needed independent primary-source verification, not just
+picking the "majority" side. **The hub must independently verify every agy CVE claim against the
+actual installed version (not just the claim's own cited source) before writing anything as a
+confirmed finding — cross-review among agy's own sub-agents is not a substitute for this.**
 
 ## CVE fixes (2026-07-08) — `pnpm audit`: 10 advisories (2 critical, 2 high, 6 moderate) → 0
 
@@ -52,6 +97,22 @@ releases because a new major superseded it.
   `^3.24.1`, which had drifted from `packages/ai`'s `^3.25.76`). v3's last
   release (`3.25.76`) shipped the day before v4.0.0, and v3 has been frozen
   for a year since. Migrate to v4 when there's bandwidth; not urgent.
+  **Verified 2026-07-18 (pass #17): CVE-2026-6991 (SQLi via CUID validator) affects v4.3.0–4.3.6
+  only — v3 is unaffected, and the recommended v4 target (4.4.3+) already clears this range, so no
+  extra floor is needed beyond the existing "≥4.4.3" target once this migration happens.**
+- **`vitest`** (root + `apps/web`, pinned `^3.2.7`) — not itself frozen (v4 is actively developed),
+  just a normal deferred major like the others here. **Verified 2026-07-18 (pass #17): if/when this
+  bumps to v4, the target MUST be ≥4.1.6** (or ≥5.0.0-beta.3 if tracking the v5 beta line) — CVE-2026-47428
+  is a CVSS 9.6 critical XSS/API-token-theft in Browser Mode affecting 4.0.17–4.1.5 and
+  5.0.0-beta.0–beta.2. The already-recorded outdated-list target (`4.1.10`) already clears this, so
+  no action needed now — just don't let a future bump land short of `4.1.6` specifically.
+- **`react`/`react-dom`** (`apps/web`, pinned `18.3.1`) — not frozen, a normal deferred major.
+  **Verified 2026-07-18 (pass #17): if/when this bumps to v19, the target MUST be ≥19.2.1** — CVE-2025-55182
+  ("React2Shell", CVSS 10.0, CISA KEV-listed pre-auth RCE via unsafe deserialization in
+  `react-server-dom-{parcel,turbopack,webpack}`) affects React **19.0.0, 19.1.0, 19.1.1, and 19.2.0
+  exactly**. React 18 is unaffected (different RSC wire-protocol code path). This is the single
+  highest-severity landmine found this pass — flag it loudly to whoever eventually does this
+  migration, since "any 19.x" is not a safe target, only ≥19.2.1 is.
 
 ## Slow-cadence maintenance — re-check periodically
 

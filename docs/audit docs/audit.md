@@ -37,6 +37,7 @@
 | 14 | **Full `/audit-workflow` queue via GLM hub-spoke orchestrator, item 1 (bugs)** | 2026-07-18 | `bugs.md` | 4 confirmed + 1 carried-over (5 total), all fixed | item 1 DONE: tsc clean, unit+int 1092/1092, lint baseline, build green. |
 | 15 | **Same queue, item 2 (security)** — 4 parallel GLM finders by area (injection/authn/secrets/access-control), diff-scoped since pass #13 + full sweep | 2026-07-18 | `secure.md` | **0 confirmed, 28 considered-and-refuted** — clean pass; branch-scoping IDOR verified safe; one human-sign-off item flagged (`listDemoAccounts` guard reversal, sound tradeoff) | read-only, no fix phase needed; GLM 5h at 6% after (Pro-tier quota, upgraded from Lite this same day) |
 | 16 | **Same queue, item 3 (API/server-action auth-check)** — 1 GLM finder, exhaustive per-export enumeration | 2026-07-18 | (no dedicated file, matches pass #3/#9 convention) | **0 confirmed across 22 entrypoints** (2 routes + 17 gated actions + 3 deliberate no-check) — 3rd consecutive clean result for this exact re-audit (after #3's original 15 fixes, #9's 0-finding re-check) | read-only, no fix phase needed |
+| 17 | **Same queue, item 4 (dependency CVEs)** — agy 3-agent research + hub independent NVD/GHSA verification | 2026-07-18 | `deps.md` (moved from `docs/deps.md` into `docs/audit docs/`) | **0 confirmed current vulnerabilities** (matches `pnpm audit`'s clean 812-dep read); agy's 4 "active CVE" + 1 abandoned-package claims all independently verified WRONG (real CVEs, misapplied versions, or a nonexistent dependency) — 2 genuine future-upgrade landmines captured (vitest→v4 needs ≥4.1.6, react→v19 needs ≥19.2.1, a CISA-KEV pre-auth RCE below that) | hub verified every claim directly against NVD/GHSA before writing anything; no fix needed |
 
 **Passes #7-#13 (2026-07-10 → 2026-07-14) previously lived at repo root, gitignored, per a
 convention conflict now resolved (see the location note at the top of this file) — folded into
@@ -142,6 +143,43 @@ first.
   section after every audit run, not just at the very end of a queued batch.
 
 ## Learnings (append after each pass — newest on top)
+
+### Pass #17 — full `/audit-workflow` run, item 4 dependency CVEs via agy (2026-07-18)
+
+- **agy's 3-agent cross-review "verified" status (2-of-3-agents-agree) is not the same as
+  "true."** All 4 of agy's non-disputed "verified" CVE claims this pass were wrong in the same
+  specific way — each cited a REAL CVE with a REAL, correctly-quoted affected-version range, but
+  then asserted it applied to THIS repo's installed version without actually checking that version
+  against the range (zod: CVE affects 4.3.0–4.3.6, repo is on 3.25.76 — a different major
+  entirely; vitest: CVE affects 4.0.17–4.1.5, repo is on 3.2.7; next-auth: advisory affects
+  <5.0.0-beta.30, repo is on beta.31; drizzle-orm: advisory affects ≤0.45.1, repo is pinned to the
+  exact fixed 0.45.2). Cross-review among agy's own sub-agents catches disagreement between
+  agents, not a shared blind spot all 3 have — it caught 0 of these 4 because all 3 agents
+  independently made the same "old package + CVE exists somewhere for it" leap.
+- **The 2 items agy's own analysts DID dispute were more informative than the 4 they agreed on** —
+  disagreement is a stronger signal to dig into than agreement, at least for this failure mode.
+  One dispute (Next.js "React2Shell") led to discovering the cited primary source (a react.dev
+  blog URL) was a flat 404 — completely fabricated — while the real CVE behind the same name
+  (CVE-2025-55182) turned out to genuinely exist, just for React 19 not Next.js/React 18. The other
+  dispute (npm package `fhir` abandonment) resolved to "not applicable at all" — this repo has zero
+  npm dependency on any package named `fhir`/`fhirclient`/`fhir-kit-client`; agy confused the
+  unrelated npm package with this repo's own internal `packages/fhir` directory (FHIR R4 parsing
+  logic, not a published package).
+  **Always independently verify agy's cited source URLs directly (WebFetch) and cross-check the
+  claimed affected-version range against the actual installed version — for BOTH agreed and
+  disputed claims — before writing anything into a findings doc as confirmed.** Don't skip
+  verification on the "verified" bucket just because agy's own cross-review passed it.
+- **A real CVE that doesn't currently apply can still be genuinely valuable to record** — this
+  pass's 2 "landmine" constraints (vitest→v4 needs ≥4.1.6 not just "any v4"; react→v19 needs
+  ≥19.2.1, since 19.0.0–19.2.0 is a CISA-KEV-listed pre-auth RCE) attach directly to this repo's
+  own already-tracked deferred-major watch-items in `deps.md` — future-you doing that migration
+  needs this exact detail, and it would be easy to naively "just bump to latest v4/v19" without it.
+- **Ground the CVE check in a real tool run FIRST, same lesson as pass #4** — `pnpm audit --json`
+  (0 vulnerabilities, 812 deps) was the fast, reliable, zero-hallucination-risk baseline this whole
+  pass converged back to. agy's research is genuinely useful for what `pnpm audit`'s local registry
+  snapshot can't catch (abandonment, license risk, CVEs not yet in npm's advisory feed) — but it is
+  not a substitute for the direct tool run as ground truth, and its output needs the same
+  fresh-evidence-over-claims standard as any GLM spoke's report.
 
 ### Pass #16 — full `/audit-workflow` GLM hub-spoke run, item 3 API auth-check (2026-07-18)
 
