@@ -145,6 +145,18 @@
 > 1083/1083 (0 fail, 3 skipped pre-existing). **Not committed** — awaiting the user's go-ahead
 > per the standing merge/push gate. See the new bullet in "Where the project stands" below and
 > `docs/NEXT_STEP_PROMPT.md` for what comes after.
+> **2026-07-18, later still: `/audit-workflow`'s item 1 (bug hunt) run + committed + pushed
+> (`ce2c7b5`).** 4 GLM find-only spokes surfaced 4 confirmed bugs (a TOCTOU double-recovery race in
+> `markAppealOutcome`, a silent zero-fold on missing FHIR amounts in `normalize.ts`, a clinician
+> dead-end CTA, a duplicate-CSV-header Select collision) + 1 carried-over still-open item from the
+> 2026-07-08 sweep (`InMemoryObjectStore` missing its production guard). All 5 fixed and
+> hub-verified (tsc clean, unit+integration **1092/1092**, lint baseline, build green). All
+> scattered audit bookkeeping files (`bugs.md`/`secure.md`/`audit.md`/`minimap.md`) consolidated
+> into `docs/audit docs/` (force-added to stay tracked despite the directory-level `.gitignore`).
+> **Items 2-8 of the 9-item queue are PAUSED — GLM 5h quota hit 100% mid-item-1** (2 fix spokes
+> died silently right at their report-writing step, code already complete — verified via `git
+> diff`, not re-fired). Resume once a confirmed reset lands. Item 9 (production readiness) is
+> gated off entirely — not public-facing yet, tracked in `docs/audit docs/audit.md`.
 
 ## Where the project stands
 
@@ -788,6 +800,21 @@
   pre-existing baseline (1 unrelated ECC-tooling error + 2 warnings); `pnpm --filter @taweed/web
   build` succeeds, all routes compile. 12 files changed, 304 insertions / 34 deletions. **Not
   committed** — awaiting the user's explicit go-ahead per the standing merge/push gate.
+- **2026-07-18, later still: `/audit-workflow` item 1 (bug hunt) — 5 real bugs found and fixed,
+  committed + pushed (`ce2c7b5`).** Full detail in `docs/audit docs/bugs.md`. Highlights:
+  `apps/web/lib/actions/recovery.ts`'s `markAppealOutcome` gained `SELECT ... FOR UPDATE OF d` to
+  close a real TOCTOU double-recovery race (proven against real Postgres in new
+  `packages/db/test/recovery-toctou-race.int.test.ts`); `packages/normalizer/src/normalize.ts`'s
+  `total_amount`/`line_amount` now throw instead of silently folding a missing FHIR
+  `Claim.total`/`item.net` to `"0.00"`; `overview`/`analytics` pages no longer offer clinician a
+  "Build owner report" CTA that 404s; `csv-mapping-panel.tsx`'s field-mapping Select no longer
+  collapses duplicate CSV header names into one unreachable option;
+  `packages/platform/src/object-store.ts`'s `InMemoryObjectStore` gained the same production guard
+  `DevPassthroughKms` already had (closes a tracked follow-up from the 2026-07-08 sweep). All
+  audit bookkeeping (`bugs.md`/`secure.md`/`audit.md`/`minimap.md`) consolidated into
+  `docs/audit docs/`. **Items 2-8 of the 9-item `/audit-workflow` queue are PAUSED — GLM 5h quota
+  hit 100% mid-item-1.** Gates: tsc clean, `DATABASE_URL=... npx vitest run` **1092/1092** (0 fail,
+  3 skipped pre-existing), lint at known baseline, `pnpm --filter @taweed/web build` green.
 - Roadmap: CREATE ✅ → IMPLEMENT ✅ → **EXECUTE (buildable pass ✅ · UI tail A2/A3 ✅ · B6 field-mapping panel ✅ · headline pending real data)** → **AI phase (AI-0 ✅ · AI-1 ✅ · AI-2 ✅ · AI-3 ✅ · AI-4 ✅ + real-data-gaps closed ✅ · AI-5 deferred)** → DEPLOY.
 
 ## Can you start now?
@@ -976,5 +1003,19 @@ IMPLEMENT:
   re-seeded after) / `pnpm lint` (clean on every file this pass touched) / `pnpm --filter
   @taweed/web build`, PLUS the real 44-item × 2-tier live `AI_EVALS_LIVE=1` eval itself (both
   tests passing clean post-fix), all confirmed green on the pushed tip before pushing.
+
+- **As of this writing (after the audit-workflow item-1 bug-fix push, 2026-07-18, later the same
+  day), `back-up` = `e1c58e1`** (the pre-push `main`/`origin/main` tip — the branch-scoping
+  git-workflow doc-sync commit, confirmed via `git fetch` immediately before pushing, 0
+  behind/1 ahead) **and `main`/`origin/main` = `ce2c7b5`** (`fix: audit-workflow item 1 — 5 real
+  bugs found+fixed`, a plain commit on `main` directly, no merge branch). `back-up` confirmed one
+  commit behind `main`. `git push -f origin back-up` succeeded on the first attempt (no classifier
+  block this time). Full `DATABASE_URL=... npx vitest run` (repo root, unit+integration) —
+  **1092/1092, 0 fail, 3 skipped** — typecheck, lint (known baseline), and
+  `pnpm --filter @taweed/web build` all confirmed green on the pushed tip before pushing. See
+  `docs/audit docs/bugs.md` and `docs/audit docs/audit.md` for the full findings/fix detail — this
+  was `/audit-workflow` item 1 of a 9-item queue (item 9 skipped, not public-facing yet); **items
+  2-8 are PAUSED, GLM 5h quota hit 100% mid-item-1** — resume once a confirmed reset lands (see
+  `resume.md` at repo root if this session is picking back up from that pause).
 
 - **Isolated feature work** (e.g. EXECUTE): create a fresh worktree + branch (`superpowers:using-git-worktrees`), build, merge to `main`, then delete the worktree + branch. NOTE: gitignored local docs (`docs/NEXT_STEP_PROMPT.md`, `docs/blocker.md`, `design/`, …) do **not** sync between a worktree and `main` — edit them directly in whichever dir you read from.
