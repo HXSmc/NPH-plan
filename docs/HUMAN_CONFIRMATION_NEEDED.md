@@ -745,3 +745,36 @@ Happy to jump on a call if that's faster than email.
 **Confirmed CR-blocked (not worth re-attempting until CR exists):** NPHIES Academy enrollment, B1/B2 PKI+conformance submission, G5 real-PHI ingestion, G8/G9 signing any vendor agreement, G12-G14 filing (SDAIA registration, DPO, DPA/SCC).
 
 > **Send order:** 1b (Academy, self-serve, today) → Emails 1 + 2 same day (gov replies are slow; start the clock) → Email 3 (Waseel) → Email 4 (Oracle) → Email 7 via referral/WhatsApp as soon as one warm intro exists → Email 5 anytime before Phase-2 build → Email 6 after a counsel referral.
+
+---
+
+## J. What to ask counsel — meeting checklist *(compiled 2026-07-19, for the in-person/scoping-call meeting)*
+
+> Per the in-person note above (§ "Better done in person"), **use this as the actual meeting agenda** — Email 6 is the same content shaped as a cold-outreach email; bring this checklist instead once a call is scheduled. Every item below traces back to a specific finding elsewhere in this doc — check the referenced section if you want the full research behind a question.
+
+**1. Data-flow + DPA (C1)**
+- [ ] Review our actual data flow end-to-end and confirm no PHI crosses the border anywhere — including logging, analytics, backups, and transactional email, not just the obvious AI-call path.
+- [ ] Draft our standard Data Processing Agreement (DPA) template to use with clinics.
+
+**2. Cross-border transfer to Anthropic — SCC + risk assessment (C1, G11, G12)**
+- [ ] Confirm the Saudi Standard Contractual Clauses (SCC, Controller-to-Processor form) are the right safeguard for the Anthropic transfer — there's no SDAIA "adequacy list" to check against, SCC is the applicable path by elimination (G11).
+- [ ] Produce the mandatory SDAIA cross-border risk assessment for sensitive/health data (Feb 2025 guideline, `dgp.sdaia.gov.sa` self-assessment tool) — this is a hard requirement, not optional paperwork, whenever relying on an Appropriate Safeguard for sensitive data (G12).
+
+**3. NPHIES portal Terms & Conditions — business-risk read (G8)**
+- [ ] General read on `nphies.sa/terms-and-conditions`: liability-limitation clause, indemnity clause running in NPHIES's favor, and the unilateral suspend/terminate-without-notice right — is this an acceptable risk to operate under, or does it need a mitigation (e.g. contractual language with clinics allocating that risk)?
+- [ ] **Specific question 1:** the ToU's disclaimer-of-warranties clause says user communications sent through the portal carry no confidentiality guarantee. Does this plausibly extend to actual FHIR claims-transaction data, or is it scoped to generic portal-support channels (contact forms, chat)? Don't let us assume the answer.
+- [ ] **Specific question 2:** the ToU's IP-rights clause bars redistribution/derivative-works of portal content without written NPHIES approval — this independently reinforces the same restriction already found on the IG package itself (F3). Confirm this means we genuinely cannot bundle any NPHIES IG/ToU-derived material into our product or CI without written sign-off.
+
+**4. Breach-notification runbook (G13)**
+- [ ] Help draft a breach-response runbook meeting SDAIA's 72-hour notification requirement — no materiality threshold, no exemptions, every breach size is notifiable. Needs to cover: detection → 72h SDAIA notification → data-subject notification "without undue delay" where harm is possible.
+
+**5. Controller vs. processor + DPO/registration (G14)**
+- [ ] Make the controller-vs-processor determination for our clinic relationship (we believe the clinic is controller, we're processor — confirm, don't assume).
+- [ ] Depending on that answer: does National Data Governance Platform registration or a mandatory DPO appointment attach to us specifically? (Registration/DPO duties attach to the controller — but confirm nothing about our specific setup shifts that.)
+- [ ] Whoever ends up owning the SDAIA-facing 72h notification (item 4 above), confirm we as processor still need to notify the clinic fast enough for *them* to hit their own 72h clock, regardless of how this determination lands.
+
+**6. Quick sanity checks — same engagement, no extra scope needed**
+- [ ] SAMA payment-services perimeter (G7): confirm our revenue model (base fee + % of recovered SAR, billed as a separate B2B invoice, insurer pays clinic directly) genuinely stays outside SAMA's regulated "payment services" definition — one-line confirmation is enough, this isn't expected to be a real gap.
+- [ ] Business-registration path (G3/G4): confirm standard KSA Commercial Registration is sufficient with no MISA license needed, given the founder is a Saudi national — we believe this is already resolved, just want a lawyer's one-line agreement on record.
+
+---
