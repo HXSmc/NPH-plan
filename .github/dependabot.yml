@@ -1,19 +1,16 @@
 version: 2
 updates:
-  # pnpm workspace (root + apps/* + packages/* + test/synthetic-*).
-  # Dependabot's "npm" ecosystem covers pnpm-lock.yaml (pnpm v7-v10).
-  # `directories` (plural) supports globbing; `directory` (singular) does not.
+  # Single shared pnpm-lock.yaml for the whole workspace (root + apps/* +
+  # packages/* + test/synthetic-*). Scanning "/" alone covers every
+  # manifest in it — per-subdirectory entries produced duplicate PRs for
+  # the same dependency that then broke on a lockfile/manifest mismatch
+  # (2026-07-19 audit: #16/#17/#18 closed for exactly this).
   - package-ecosystem: "npm"
-    directories:
-      - "/"
-      - "/apps/*"
-      - "/packages/*"
-      - "/test/synthetic-fhir"
-      - "/test/synthetic-eob"
+    directory: "/"
     schedule:
       interval: "weekly"
     groups:
-      # Bundle low-risk minor/patch bumps into one PR per directory per week;
+      # Bundle low-risk minor/patch bumps into one PR per week;
       # major bumps stay ungrouped so each gets individual review.
       minor-and-patch:
         update-types:
