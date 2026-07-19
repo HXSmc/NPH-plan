@@ -20,7 +20,6 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? (() => undefined);
 });
 
-const mockedPush = vi.fn();
 let mockedSearchParamsString = "";
 
 vi.mock("next-intl", () => ({
@@ -28,7 +27,6 @@ vi.mock("next-intl", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockedPush }),
   usePathname: () => "/en/analytics",
   useSearchParams: () => new URLSearchParams(mockedSearchParamsString),
 }));
@@ -40,11 +38,22 @@ const BRANCHES = [
   { id: "branch-mecca", name: "Mecca, Al Aziziyah" },
 ];
 
+// A soft router.push() for this same-route, query-param-only change never
+// applied in a real production build (client RSC-apply gap — see
+// tenant-switcher.tsx's comment). Selection now assigns window.location.href
+// directly (a hard navigation), so tests assert against that instead of a
+// mocked router.
+let mockedLocation: { href: string };
+
 describe("TenantSwitcher — branch selection", () => {
   afterEach(cleanup);
   beforeEach(() => {
-    mockedPush.mockClear();
     mockedSearchParamsString = "";
+    mockedLocation = { href: "" };
+    Object.defineProperty(window, "location", {
+      value: mockedLocation,
+      writable: true,
+    });
   });
 
   it("shows 'All branches' in the trigger label when no branch is selected", () => {
@@ -64,7 +73,7 @@ describe("TenantSwitcher — branch selection", () => {
     const item = await screen.findByRole("menuitemradio", { name: "Riyadh, Al Malaz" });
     await user.click(item);
 
-    expect(mockedPush).toHaveBeenCalledWith("/en/analytics?branch=branch-riyadh");
+    expect(mockedLocation.href).toBe("/en/analytics?branch=branch-riyadh");
   });
 
   it("clears the branch param when 'All branches' is selected", async () => {
@@ -76,7 +85,7 @@ describe("TenantSwitcher — branch selection", () => {
     const item = await screen.findByRole("menuitemradio", { name: "All branches" });
     await user.click(item);
 
-    expect(mockedPush).toHaveBeenCalledWith("/en/analytics");
+    expect(mockedLocation.href).toBe("/en/analytics");
   });
 
   it("preserves an existing search param (e.g. ?q=) when switching branch", async () => {
@@ -88,9 +97,8 @@ describe("TenantSwitcher — branch selection", () => {
     const item = await screen.findByRole("menuitemradio", { name: "Mecca, Al Aziziyah" });
     await user.click(item);
 
-    const calledWith = mockedPush.mock.calls[0]![0] as string;
-    expect(calledWith).toContain("q=Bupa");
-    expect(calledWith).toContain("branch=branch-mecca");
+    expect(mockedLocation.href).toContain("q=Bupa");
+    expect(mockedLocation.href).toContain("branch=branch-mecca");
   });
 
   it("shows the selected branch's name in the trigger label", () => {
@@ -109,8 +117,12 @@ describe("TenantSwitcher — branch selection", () => {
 describe("TenantSwitcher — accessibility fixes (a11y.md finding #18)", () => {
   afterEach(cleanup);
   beforeEach(() => {
-    mockedPush.mockClear();
     mockedSearchParamsString = "";
+    mockedLocation = { href: "" };
+    Object.defineProperty(window, "location", {
+      value: mockedLocation,
+      writable: true,
+    });
   });
 
   // F1: the scope must remain in the trigger's accessible name at every

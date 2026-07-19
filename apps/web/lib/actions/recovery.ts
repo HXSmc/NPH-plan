@@ -1,7 +1,5 @@
 "use server";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "@taweed/db";
@@ -138,42 +136,16 @@ export async function markAppealOutcome(
   if (!resolution) return { ok: false };
 
   // Revalidate the whole authenticated layout so the ROI band, overview, and the
-  // command-bar money indicator all recompute.
+  // command-bar money indicator all recompute on the next navigation/refresh.
+  // The caller (recovery-outcome-actions.tsx) drives the actual client
+  // re-render via router.refresh() rather than relying on a server-action
+  // <form>'s implicit re-render — confirmed via a real `next build` +
+  // `next start` run that the latter left the Recovery totals stale until a
+  // manual reload (bugs.md pass #22).
   revalidatePath("/[locale]/(app)", "layout");
   return {
     ok: true,
     corrected: resolution.corrected,
     recoveredSar: resolution.recoveredSar,
   };
-}
-
-/** Form-action shape (returns void): reads appealId + outcome (+ optional recovered) from the form. */
-export async function markAppealOutcomeForm(formData: FormData): Promise<void> {
-  const appealId = String(formData.get("appealId") ?? "");
-  const outcome = String(formData.get("outcome") ?? "");
-  const recoveredRaw = formData.get("recoveredSar");
-  const recoveredSar =
-    typeof recoveredRaw === "string" && recoveredRaw.length > 0
-      ? recoveredRaw
-      : undefined;
-  if (outcome === "won" || outcome === "lost" || outcome === "submitted") {
-    const result = await markAppealOutcome(appealId, outcome, recoveredSar);
-    // Surface failures instead of swallowing them. markAppealOutcome returns
-    // {ok:false} — deliberately detail-free so it can't leak RBAC/RLS state —
-    // when the caller is unauthorized, the input is invalid, the per-tenant
-    // throttle trips, or the appeal isn't found for this tenant. Previously
-    // this return was discarded (`await ... ` with no use), so a failed "mark
-    // won/lost" was indistinguishable from a successful no-op: the operator
-    // clicked and nothing visibly happened (e.g. an admin/read-only or
-    // clinician/hidden role, or a stale appeal id). A server-action <form>
-    // already re-renders the page on success; on failure we redirect with a
-    // flag so the page renders an inline error region (settings.actionFailed).
-    if (!result.ok) {
-      // Locale comes from the next-intl middleware request header (set on the
-      // form POST by apps/web/middleware.ts), so we don't pull next-auth into
-      // this action just to read it off the session.
-      const locale = (await headers()).get("x-next-intl-locale") ?? "en";
-      redirect(`/${locale}/recovery?recoveryError=1`);
-    }
-  }
 }

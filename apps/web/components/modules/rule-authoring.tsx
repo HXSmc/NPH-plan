@@ -1,6 +1,5 @@
 "use client";
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Sparkles, Loader2, ShieldCheck, ShieldAlert, Check, X } from "lucide-react";
 import {
@@ -83,7 +82,6 @@ export function RuleAuthoring({
 }) {
   const t = useTranslations("settings");
   const locale = useLocale();
-  const router = useRouter();
 
   const [text, setText] = React.useState("");
   const [scope, setScope] = React.useState<"global" | "payer">("global");
@@ -135,7 +133,10 @@ export function RuleAuthoring({
       setActing(null);
       if (outcome.ok) {
         setResult(null);
-        router.refresh();
+        // router.refresh() never applied the updated authored-rule status in
+        // a real production build (same client RSC-apply gap as
+        // recovery-outcome-actions.tsx) — a hard reload is the reliable fix.
+        window.location.reload();
       } else {
         setActionErr({ gate: outcome.gate, error: outcome.error });
       }

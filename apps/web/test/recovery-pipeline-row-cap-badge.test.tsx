@@ -13,7 +13,10 @@ import type { getRecovery as GetRecoveryFn, AppealPipelineRow } from "../lib/dat
 // number of rows actually rendered. Fix: the Badge now shows "shown of total"
 // once a stage exceeds the per-stage row cap, so the truncation is visible
 // instead of silent; the table itself still renders only the capped rows.
-vi.mock("next/navigation", () => ({ notFound: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  notFound: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock("next-intl/server", () => ({
   getTranslations: vi.fn(async () => ((key: string) => key) as unknown),
   setRequestLocale: vi.fn(),
@@ -25,7 +28,7 @@ vi.mock("@/lib/data", () => ({
   resolveBranchId: vi.fn(() => undefined),
   resolveBranchScope: vi.fn(async () => ({ branches: [], branchId: undefined })),
 }));
-vi.mock("@/lib/actions/recovery", () => ({ markAppealOutcomeForm: vi.fn() }));
+vi.mock("@/lib/actions/recovery", () => ({ markAppealOutcome: vi.fn() }));
 vi.mock("@/components/shell/page-header", () => ({
   PageHeader: () => null,
   Provenance: (props: { children?: React.ReactNode }) => <>{props.children}</>,

@@ -50,7 +50,7 @@ vi.mock("@/lib/data", () => {
   };
 });
 vi.mock("@/lib/actions/recovery", () => ({
-  markAppealOutcomeForm: vi.fn(),
+  markAppealOutcome: vi.fn(),
 }));
 // The page's own JSX tree is irrelevant to the RBAC gate under test — stub
 // the child components so this test exercises real rbac.ts + control flow
@@ -74,6 +74,9 @@ vi.mock("@/components/ui/table", () => ({
   TR: (props: { children?: unknown }) => props.children,
   TH: (props: { children?: unknown }) => props.children,
   TD: (props: { children?: unknown }) => props.children,
+}));
+vi.mock("@/components/modules/recovery-outcome-actions", () => ({
+  RecoveryOutcomeActions: () => null,
 }));
 
 import { requireSession } from "../lib/session";

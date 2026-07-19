@@ -1,6 +1,7 @@
 "use client";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Building2, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Building2, ChevronDown, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
   DropdownMenu,
@@ -37,9 +38,9 @@ export function TenantSwitcher({
   branches: { id: string; name: string }[];
 }) {
   const t = useTranslations("common");
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, setIsPending] = useState(false);
 
   const selectedId = searchParams.get("branch");
   const selectedBranch = branches.find((b) => b.id === selectedId);
@@ -50,12 +51,23 @@ export function TenantSwitcher({
     if (id) params.set("branch", id);
     else params.delete("branch");
     const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+    // A soft `router.push()` for a query-param-only change (same route,
+    // just ?branch=) never applied in a real production build — the RSC
+    // fetch came back 200 but React left the old page/DOM in place forever
+    // (same client RSC-apply gap that hit the Recovery mark-won button; see
+    // recovery-outcome-actions.tsx). A hard navigation sidesteps it: it
+    // reliably shows the branch-scoped data every time this was tested.
+    setIsPending(true);
+    window.location.href = qs ? `${pathname}?${qs}` : pathname;
   }
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="focus-ring flex items-center gap-2 rounded-md border border-hairline bg-surface-1 px-2.5 py-1.5 text-body hover:bg-surface-2">
+      <DropdownMenuTrigger
+        disabled={isPending}
+        aria-busy={isPending}
+        className="focus-ring flex items-center gap-2 rounded-md border border-hairline bg-surface-1 px-2.5 py-1.5 text-body hover:bg-surface-2 disabled:cursor-wait disabled:opacity-70"
+      >
         <Building2 className="size-4 text-muted" aria-hidden />
         <span className="max-w-[10rem] truncate font-medium">{tenantName}</span>
         {/* Scope must stay in the trigger's accessible name at every viewport.
@@ -67,7 +79,14 @@ export function TenantSwitcher({
         <span className="hidden text-muted sm:inline" aria-hidden="true">
           · {scopeLabel}
         </span>
-        <ChevronDown className="size-4 text-muted" aria-hidden />
+        {isPending ? (
+          <Loader2
+            className="size-4 animate-spin text-muted motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+        ) : (
+          <ChevronDown className="size-4 text-muted" aria-hidden />
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[14rem]">
         <DropdownMenuLabel>{tenantName}</DropdownMenuLabel>

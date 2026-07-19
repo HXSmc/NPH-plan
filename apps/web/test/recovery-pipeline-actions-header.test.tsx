@@ -16,7 +16,10 @@ import type { getRecovery as GetRecoveryFn } from "../lib/data";
 // `t("actions")` label inside the <th> (page.tsx's pipeline table header
 // row), so the header cell now has a real accessible name while staying
 // visually blank to sighted users.
-vi.mock("next/navigation", () => ({ notFound: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  notFound: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock("next-intl/server", () => ({
   getTranslations: vi.fn(async () => ((key: string) => key) as unknown),
   setRequestLocale: vi.fn(),
@@ -28,7 +31,7 @@ vi.mock("@/lib/data", () => ({
   resolveBranchId: vi.fn(() => undefined),
   resolveBranchScope: vi.fn(async () => ({ branches: [], branchId: undefined })),
 }));
-vi.mock("@/lib/actions/recovery", () => ({ markAppealOutcomeForm: vi.fn() }));
+vi.mock("@/lib/actions/recovery", () => ({ markAppealOutcome: vi.fn() }));
 vi.mock("@/components/shell/page-header", () => ({
   PageHeader: () => null,
   Provenance: (props: { children?: React.ReactNode }) => <>{props.children}</>,

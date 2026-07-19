@@ -262,9 +262,9 @@ describe("getScrubRows", () => {
   };
 
   beforeEach(() => {
-    // Call order inside getScrubRows: claims (orderBy+limit), then Promise.all
-    // of [claimLines, patients, payers] (each a .where() call, synchronously
-    // invoked in that array-literal order).
+    // Call order inside getScrubRows: claims (orderBy+limit), then sequential
+    // awaits of claimLines, patients, payers (each a .where() call, in that
+    // order — see bugs.md pass #22 for why this isn't Promise.all anymore).
     selectQueue = [
       [CLAIM_A, CLAIM_B, CLAIM_C], // claims
       [], // claim_lines (unused by this fake — facts come from the mock)

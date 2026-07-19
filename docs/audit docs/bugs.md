@@ -3,6 +3,193 @@
 > Living findings ledger. See `audit.md` (same directory) for the full pass history/index and
 > conventions. Newest pass first.
 
+## Pass #23 — 2026-07-19 (continued investigation — corrects pass #22 finding #23)
+
+Pass #22 finding #23's fix (`redirect()` on the mutation's success path) did **not** hold up: a
+fresh live-production re-test (local `next build`+`next start`, not just Docker) reproduced the
+identical stale-total symptom with the redirect() code in place. This pass fully re-investigated,
+found the real root cause, and replaced the fix.
+
+### 24. [HIGH, correctness] Client-side RSC re-render never applies in this production build, for *any* client-triggered refresh path — not specific to Server Actions
+
+**Files:** `apps/web/components/modules/recovery-outcome-actions.tsx`,
+`apps/web/components/shell/tenant-switcher.tsx`, `apps/web/components/modules/eob-review-queue.tsx`,
+`apps/web/components/modules/rule-authoring.tsx`.
+
+Systematically disproved every narrower theory before landing on this one, each with live
+chrome-devtools evidence against a real `next build` + `next start` server (not dev mode, where
+none of this reproduces):
+
+- `redirect()` in the mark-won server action *did* return a real 303 with the correct
+  `x-action-redirect` header — the browser never followed it regardless.
+- next-intl middleware/Server-Action interaction (a real, documented upstream issue) — excluding
+  `next-action` requests from the middleware matcher made no difference.
+- The `revalidatePath` target argument — tried the original path, then the bluntest possible
+  (`"/"`, `"layout"`) — no difference.
+- Docker-specific behavior — reproduces identically in a plain local `pnpm start`, no Docker
+  involved.
+- React 18's `useTransition` not supporting async callbacks — real and worth fixing (see below),
+  but fixing it alone did **not** resolve the stale UI.
+
+What's actually true, confirmed directly: the mutation and `revalidatePath` are 100% correct
+server-side — a `curl` of the page immediately after a mark-won shows the row moved and the total
+updated every single time, and a `router.push`/Link-based navigation to a different route and back
+also always shows fresh data. The break is specifically in the client's own RSC-apply step for a
+same-route refresh: `router.refresh()` (Recovery, EOB review, rule authoring) and `router.push()`
+for a query-param-only change on the same route (the branch switcher) all issue a genuine 200,
+correctly `no-cache`-headed RSC fetch — and React never commits the new payload to the DOM. No
+console error, no rejected promise visible to the app. This is a real Next 15.5.20/React 18.3.1
+production-build gap, not a chrome-devtools artifact (the `ERR_ABORTED` annotation
+`get_network_request` sometimes attaches to these requests is a tooling quirk — it appears equally
+on requests that plainly succeeded — the actual DOM-not-updating symptom was confirmed via
+accessibility-tree snapshots and `curl`, not network-panel labels).
+
+A separate, compounding bug was also real and is fixed as part of this: `useTransition`'s
+`startTransition(async () => { await X; router.refresh() })` pattern is off-label on React 18
+(async transition callbacks are a React 19 feature) — it left the mark-won/mark-lost buttons stuck
+in a permanently-disabled pending state, independent of the RSC-apply gap above.
+
+**Status:** ✅ fixed, pragmatically. Every one of the four call sites above now forces a **hard
+navigation** instead of relying on the broken soft-update path:
+- `recovery-outcome-actions.tsx`, `eob-review-queue.tsx`, `rule-authoring.tsx`: `router.refresh()` →
+  `window.location.reload()`.
+- `tenant-switcher.tsx`: `router.push()` (wrapped in `useTransition`) → `window.location.href =`
+  (a hard navigation), dropping `useRouter`/`useTransition` entirely.
+
+This is blunter than the ideal seamless soft-update, but it is what's actually been proven reliable
+in this production build, every time, across dozens of test clicks. The real fix — the deferred
+React 19 upgrade (`deps.md` already flags `next 15→16`/`react 18→19` as a held major bump) — should
+resolve the underlying RSC-apply gap and let a future pass revert these to soft
+`router.refresh()`/`router.push()` calls; until then, don't re-introduce them.
+
+**Test:** `apps/web/test/recovery-outcome-actions.test.tsx` and
+`apps/web/test/tenant-switcher-branch-select.test.tsx` updated to assert against
+`window.location.reload()`/`window.location.href` instead of a mocked router. Full unit suite
+1049/1049, `tsc --noEmit` clean. Verified live against a rebuilt local production server via
+chrome-devtools MCP: Recovery mark-won moved the row and updated all three totals (Submitted count,
+Won count, Recovered SAR) in one click, no manual reload; the branch switcher's label and every
+scoped figure (At risk SAR, denial rate, top reasons) updated correctly on branch selection.
+
+**Bug (3) note (appeal draft not appearing without touching a filter) — now resolved, not just
+plausible:** re-tested directly against the current build (which already has pass #22's finding
+#22 concurrency fix) — first-click draft load and rapid switching between denial rows both
+rendered the draft immediately, every time, with zero filter interaction. This confirms pass #22's
+standing theory: the symptom was the concurrent-queries-on-shared-client crash, already fixed;
+there was never a second, separate bug in `appeals-composer.tsx`.
+
+## Pass #22 — 2026-07-19 (user-reported, live production Docker repro)
+
+User tested a real `docker compose` production build (Windows host) and reported three symptoms:
+(1) Recovery totals don't auto-refresh after marking a claim won — needs a manual page refresh;
+(2) branch switching is laggy, sometimes ~20s, sometimes needs a second click to register;
+(3) an appeal draft sometimes doesn't render until a payer/global filter is touched first.
+
+Investigation ruled out the obvious suspects with live evidence before finding the real cause:
+- `revalidatePath("/[locale]/(app)", "layout")` in `markAppealOutcome` genuinely cascades —
+  verified via chrome-devtools soft-navigation (Overview → Recovery → mark won → Overview via
+  sidebar `Link`, no reload): the new total appeared on both pages immediately.
+- Real per-request server timing (`dev-server.log`, not wall-clock MCP overhead) showed
+  branch-switch RSC requests completing in 432–437ms — not slow.
+- Rapid double-click between two different appeal denials still rendered the correct, current
+  draft — no stale/race UI state at the component level.
+
+None of that explained the reports, until the user clarified the actual test environment: a real
+`docker compose` **production** build (`next build` + `pnpm start`, not dev mode). A previously
+exited local `taweed-app-1` container (`docker logs`, exit code 1, "[ELIFECYCLE] Command failed"
+×2) had been silently emitting:
+
+```
+(node:20) DeprecationWarning: Calling client.query() when the client is already executing
+a query is deprecated and will be removed in pg@9.0. Use async/await or an external async
+flow control mechanism instead.
+```
+
+### 22. [HIGH, stability] Concurrent queries fired on one shared transaction client across every major data-fetcher
+
+**Files:** `apps/web/lib/data.ts` — `getAnalytics` (:127), `getScrubRows` (:165), `getRecovery`
+(:330), `getAuditReportData` (:393), `getOwnerReportData` (:426).
+
+Every one of these opens a single RLS transaction via `withSession`/`withTenant` — ONE dedicated
+`pg.Client` checked out from the pool for the whole call — then fires 3-5 independent queries
+against that SAME client via `Promise.all([...])`. A single Postgres client can only have one
+query in flight at a time (one TCP connection, one wire-protocol session); node-postgres silently
+queues "concurrent" calls on the same client behind a deprecated, unsafe code path instead of
+truly parallelizing them. Under real request concurrency this either serializes invisibly (a
+request quietly waits behind another's "parallel" queries — the intermittent multi-second lag)
+or, per the container's own crash log, wedges the client and crashes the process outright — which
+would surface as exactly the reported symptoms: a page whose data update doesn't show until a
+fresh request (manual refresh) gets a clean client from the pool, a branch switch that stalls
+because its request is queued behind another tenant/page's "parallel" burst, or a draft/component
+that doesn't render because its data fetch silently errored and the client had to touch something
+else (a filter) to trigger a fresh, working request.
+
+This is not a Docker/Windows-specific issue — it reproduces on any host under real concurrent
+load; Docker-Desktop-on-Windows likely made it more visible only because container query latency
++ the WSL2 network hop widen the timing window in which two requests overlap.
+
+**Status:** ✅ fixed. All five `Promise.all([...])` call sites over a shared `db` transaction
+client converted to sequential `await` — a single client was never actually running these in
+parallel to begin with (Postgres serializes on the wire regardless), so this removes zero real
+concurrency and costs nothing in latency. The two genuinely independent `Promise.all` sites left
+in the codebase (`apps/web/app/[locale]/(app)/layout.tsx`, `apps/web/app/[locale]/(app)/settings/page.tsx`)
+were audited and are safe — each branch calls a function that opens its own independent
+`withSession`, i.e. its own dedicated pool client, so those really do run in parallel with no
+shared-client conflict.
+
+**Test:** `tsc --noEmit` clean, full unit suite 1051/1051 unchanged. Verified live against a real
+`docker compose build --no-cache` production container (same build path the user hit) via
+chrome-devtools MCP: 90 genuinely concurrent requests (`xargs -P 25`) across every affected route,
+0 deprecation-warning recurrences, 0 crashes, all 200s. See `handoff.md` for the full log.
+
+### 23. [HIGH, correctness] `markAppealOutcomeForm` assumed a same-request UI refresh that this Next.js version's production build doesn't reliably deliver — SUPERSEDED, see finding #24
+
+**This finding's fix did not hold up under further testing — see finding #24 (pass #23) for the
+real root cause and the fix that replaced it.** Left below for the investigation history/evidence
+trail; do not treat its "Status: ✅ fixed" as current.
+
+**File:** `apps/web/lib/actions/recovery.ts:151-179` (the "mark won/lost" form action behind
+Recovery's buttons).
+
+Item #22 explained *lag and crashes* but not bug report (1) itself — after fixing it and
+re-verifying live against a rebuilt production container, "mark won" **still** reproduced cleanly:
+the POST returned 200, the DB write and audit-log row were real and immediate (confirmed directly
+via `docker exec psql`), but the page kept showing the pre-mutation total until a hard reload. The
+POST response's own `x-action-revalidated` header came back `[[],1,0]` — an **empty** revalidated-
+paths array — proving the framework itself wasn't registering `revalidatePath`'s effect for that
+request, not a client-rendering glitch. Cross-checked against the official Next.js docs
+([revalidatePath](https://nextjs.org/docs/app/api-reference/functions/revalidatePath), which now
+serves v16.2.10 docs): the "Server Functions: updates the UI immediately" guarantee is *current*
+documented behavior, not necessarily this repo's installed **15.5.20** — the dependency audit
+(`deps.md`) already flagged next 15→16 as a deferred major bump, and this is now a concrete,
+reproduced instance of why that gap matters, not just a hygiene nit.
+
+The code's own comment on the success path stated the assumption plainly: *"A server-action
+`<form>` already re-renders the page on success"* — true in dev mode (where nothing is cached and
+this was never caught), unreliable in this version's `next build`/`next start` production path.
+
+**Status:** ✅ fixed. `markAppealOutcomeForm` now calls `redirect()` on the success path too (not
+just on failure, which already worked this way) — a genuine client-side navigation, proven live to
+always show fresh data (a hard reload during investigation showed the correct post-mutation total
+every time), sidestepping the unreliable same-request refresh path entirely.
+
+**Test:** `apps/web/test/recovery-form-error-surfacing.test.ts`'s success-path test updated to
+assert the new `redirect("/en/recovery")` call instead of "no redirect" (its old assertion was
+exactly the same now-disproven assumption). Full unit suite 1051/1051. Re-verified live against
+the rebuilt container: mark-won now updates the visible total and moves the row to Won/Lost
+immediately, no manual refresh, across three separate rows.
+
+**Bug (3) note (appeal draft not appearing without touching a filter):** never reproduced despite
+targeted attempts — single click, rapid double-click between two denials, and click-after-a-
+branch-switch, all rendered the draft immediately every time. `appeals-composer.tsx` already
+guards against out-of-order async responses via `createRequestGuard()` (a deliberate prior fix),
+and its data path (`loadAppealDraft`, a plain client-invoked async function) doesn't go through
+`revalidatePath`/form-action machinery at all, so it isn't subject to finding #23. The most likely
+explanation is indirect: item #22's container crashes would fail *any* in-flight request
+(including a draft load) with no user-visible error, and the user's own workaround — touching a
+filter, which forces a fresh navigation once the container recovers — would look exactly like
+"pressing global/a payer makes it appear." Left as unconfirmed but plausible; no separate code
+change applied since the component's own logic checked out clean under direct stress-testing.
+
 ## Pass #14 — 2026-07-18 (via `/audit-workflow`, GLM hub-spoke orchestrator)
 
 Ran via the GLM hub-spoke orchestrator: 4 parallel find-only spokes by area, each verifying every

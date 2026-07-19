@@ -1,17 +1,15 @@
 import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Check, TriangleAlert, X } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { isVisible } from "@/lib/rbac";
 import { getRecovery, resolveBranchScope, type AppealPipelineRow } from "@/lib/data";
-import { markAppealOutcomeForm } from "@/lib/actions/recovery";
 import { formatMoney, formatPct, toNumber } from "@/lib/money";
 import { PageHeader, Provenance } from "@/components/shell/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { MoneyFigure } from "@/components/money/money-figure";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { RecoveryOutcomeActions } from "@/components/modules/recovery-outcome-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +29,7 @@ export default async function RecoveryPage({
   // Optional only so direct unit-test invocation (which calls the component
   // with just `params`) stays safe; Next.js always supplies searchParams at
   // runtime.
-  searchParams?: Promise<{ recoveryError?: string | string[]; branch?: string }>;
+  searchParams?: Promise<{ branch?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -50,25 +48,15 @@ export default async function RecoveryPage({
   // Reuses the existing generic "action did not complete" string rather than
   // adding a new i18n key (the messages JSON is outside this task's scope).
   const tAction = await getTranslations("settings");
+  const actionFailedLabel = tAction("actionFailed");
 
   // Branch scope (design-brief §7): resolve the ?branch=<id> param against the
   // tenant's REAL branches (RLS-scoped) so a stale/forged/cross-tenant id is
   // ignored, not trusted as a filter. Same pattern as scrubber/page.tsx.
-  // `sp` is kept locally because recovery also reads the `?recoveryError=`
-  // param below; only the branch-scope resolution is shared.
-  const sp = (await searchParams) ?? {};
   const { branchId } = await resolveBranchScope(session.tenantId, searchParams);
 
   const { money, winRate, medianDays, sharePct, shareSar, rows } =
     await getRecovery(session.tenantId, branchId);
-
-  // Set by markAppealOutcomeForm when a "mark won/lost" mutation failed (RBAC
-  // denial, invalid input, throttle, or appeal not found for this tenant) —
-  // previously the failure was swallowed and the operator saw nothing happen.
-  const recoveryErrorFlag = Array.isArray(sp.recoveryError)
-    ? sp.recoveryError[0]
-    : sp.recoveryError;
-  const showRecoveryError = Boolean(recoveryErrorFlag);
 
   const stageLabel: Record<string, string> = {
     submitted: t("stageSubmitted"),
@@ -81,20 +69,6 @@ export default async function RecoveryPage({
   return (
     <div>
       <PageHeader title={t("title")} lead={t("lead")} />
-
-      {/* Inline failure banner for a "mark won/lost" action that returned
-          {ok:false} (see markAppealOutcomeForm). role="alert" + aria-live so
-          assistive tech announces it; the at-risk tone matches error.tsx. */}
-      {showRecoveryError && (
-        <p
-          role="alert"
-          aria-live="assertive"
-          className="mb-4 flex items-center gap-2 rounded-md border border-at-risk/30 bg-at-risk-bg px-4 py-3 text-body text-at-risk-text"
-        >
-          <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-          {tAction("actionFailed")}
-        </p>
-      )}
 
       {/* ROI band — recovered is the emerald hero (the product promise made visible). */}
       <section className="grid grid-cols-1 gap-5 lg:grid-cols-4">
@@ -184,6 +158,7 @@ export default async function RecoveryPage({
                             payer: r.payerName,
                             amount: formatMoney(r.appealedSar),
                           })}
+                          actionFailedLabel={actionFailedLabel}
                         />
                       ))}
                     </TBody>
@@ -215,12 +190,14 @@ function PipelineRow({
   markLost,
   markWonLabel,
   markLostLabel,
+  actionFailedLabel,
 }: {
   row: AppealPipelineRow;
   markWon: string;
   markLost: string;
   markWonLabel: string;
   markLostLabel: string;
+  actionFailedLabel: string;
 }) {
   const terminal = row.status === "won" || row.status === "lost";
   return (
@@ -234,34 +211,14 @@ function PipelineRow({
       <TD className="text-end num text-muted">{row.daysOpen}</TD>
       <TD className="text-end">
         {!terminal && (
-          <div className="flex justify-end gap-1">
-            <form action={markAppealOutcomeForm}>
-              <input type="hidden" name="appealId" value={row.appealId} />
-              <input type="hidden" name="outcome" value="won" />
-              <Button
-                type="submit"
-                variant="secondary"
-                size="sm"
-                className="gap-1"
-                aria-label={markWonLabel}
-              >
-                <Check className="size-3.5 text-recovered" /> {markWon}
-              </Button>
-            </form>
-            <form action={markAppealOutcomeForm}>
-              <input type="hidden" name="appealId" value={row.appealId} />
-              <input type="hidden" name="outcome" value="lost" />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className="gap-1"
-                aria-label={markLostLabel}
-              >
-                <X className="size-3.5" /> {markLost}
-              </Button>
-            </form>
-          </div>
+          <RecoveryOutcomeActions
+            appealId={row.appealId}
+            markWon={markWon}
+            markLost={markLost}
+            markWonLabel={markWonLabel}
+            markLostLabel={markLostLabel}
+            actionFailedLabel={actionFailedLabel}
+          />
         )}
       </TD>
     </TR>

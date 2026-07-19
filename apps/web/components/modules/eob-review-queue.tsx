@@ -1,6 +1,5 @@
 "use client";
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Inbox, Loader2, TriangleAlert } from "lucide-react";
 import type { EobReviewRow } from "@/lib/eob-review-data";
@@ -38,7 +37,6 @@ const ERROR_KEY: Record<string, string> = {
 
 export function EobReviewQueue({ rows }: { rows: EobReviewRow[] }) {
   const t = useTranslations("reviewQueue");
-  const router = useRouter();
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [action, setAction] = React.useState<ActionState>({ status: "idle" });
@@ -56,7 +54,10 @@ export function EobReviewQueue({ rows }: { rows: EobReviewRow[] }) {
           // a background approve/reject for a row they've since navigated away
           // from must not discard whatever they're now reviewing.
           setSelectedId((prev) => (prev === rowId ? null : prev));
-          router.refresh();
+          // router.refresh() never applied the refreshed queue in a real
+          // production build (same client RSC-apply gap as
+          // recovery-outcome-actions.tsx) — a hard reload is the reliable fix.
+          window.location.reload();
         } else {
           setAction({ status: "error", rowId, key: ERROR_KEY[res.error ?? "failed"] ?? "reviewFailed" });
         }
@@ -81,7 +82,7 @@ export function EobReviewQueue({ rows }: { rows: EobReviewRow[] }) {
           // a background approve/reject for a row they've since navigated away
           // from must not discard whatever they're now reviewing.
           setSelectedId((prev) => (prev === rowId ? null : prev));
-          router.refresh();
+          window.location.reload();
         } else {
           setAction({ status: "error", rowId, key: ERROR_KEY[res.error ?? "invalid"] ?? "reviewInvalid" });
         }

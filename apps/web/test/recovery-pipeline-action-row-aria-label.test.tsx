@@ -24,7 +24,10 @@ import arMessages from "../messages/ar.json";
 // the two buttons, so each row's actions announce with its own payer and
 // appealed amount — mirroring the Scrubber convention and giving every row a
 // distinct, contextual accessible name in both locales.
-vi.mock("next/navigation", () => ({ notFound: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  notFound: vi.fn(),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 // Minimal but real interpolation against the project's own message catalogs,
 // so this test fails if the translation templates regress (missing
@@ -55,7 +58,7 @@ vi.mock("@/lib/data", () => ({
   resolveBranchId: vi.fn(() => undefined),
   resolveBranchScope: vi.fn(async () => ({ branches: [], branchId: undefined })),
 }));
-vi.mock("@/lib/actions/recovery", () => ({ markAppealOutcomeForm: vi.fn() }));
+vi.mock("@/lib/actions/recovery", () => ({ markAppealOutcome: vi.fn() }));
 vi.mock("@/components/shell/page-header", () => ({
   PageHeader: () => null,
   Provenance: (props: { children?: React.ReactNode }) => <>{props.children}</>,

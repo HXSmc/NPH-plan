@@ -125,16 +125,21 @@ export function getAnalytics(
   // bar but has no filtering effect on that module.
   const f = branchId ? { branchIds: [branchId] } : undefined;
   return withSession(tenantId, async (db) => {
-    const [money, byPayer, byBranch, pareto, trendPts] = await Promise.all([
-      // Direct (not the cached getMoneyScope) when filtering, so the branch
-      // actually narrows the hero money. The layout's CommandBar keeps using the
-      // cached unfiltered getMoneyScope for its global chrome indicator.
-      branchId ? moneyScope(db, f) : getMoneyScope(tenantId),
-      denialRateDim(db, "payer", branchId),
-      denialRateDim(db, "branch"),
-      reasonPareto(db, f),
-      trend(db, f),
-    ]);
+    // Sequential, not Promise.all: these all share ONE transaction client (a
+    // single pg connection), which can only run one query at a time. Firing
+    // them "concurrently" doesn't parallelize anything — node-postgres just
+    // queues them internally behind a deprecated, unsafe call pattern
+    // ("Calling client.query() when the client is already executing a query"),
+    // which stalls or crashes the process under real request load.
+    //
+    // Direct (not the cached getMoneyScope) when filtering, so the branch
+    // actually narrows the hero money. The layout's CommandBar keeps using the
+    // cached unfiltered getMoneyScope for its global chrome indicator.
+    const money = branchId ? await moneyScope(db, f) : await getMoneyScope(tenantId);
+    const byPayer = await denialRateDim(db, "payer", branchId);
+    const byBranch = await denialRateDim(db, "branch");
+    const pareto = await reasonPareto(db, f);
+    const trendPts = await trend(db, f);
     const totalClaims = byPayer.reduce((a, r) => a + r.claims, 0);
     const deniedClaims = byPayer.reduce((a, r) => a + r.denied, 0);
     const overallRate = totalClaims > 0 ? deniedClaims / totalClaims : 0;
@@ -177,20 +182,19 @@ export function getScrubRows(
     const patientIds = Array.from(new Set(claims.map((c) => c.patient_id)));
     const payerIds = Array.from(new Set(claims.map((c) => c.payer_id)));
 
-    const [lines, patients, payers] = await Promise.all([
-      db
-        .select()
-        .from(schema.claimLines)
-        .where(inArray(schema.claimLines.claim_id, claimIds)),
-      db
-        .select()
-        .from(schema.patients)
-        .where(inArray(schema.patients.id, patientIds)),
-      db
-        .select()
-        .from(schema.payers)
-        .where(inArray(schema.payers.id, payerIds)),
-    ]);
+    // Sequential — one shared transaction client, see the note in getAnalytics.
+    const lines = await db
+      .select()
+      .from(schema.claimLines)
+      .where(inArray(schema.claimLines.claim_id, claimIds));
+    const patients = await db
+      .select()
+      .from(schema.patients)
+      .where(inArray(schema.patients.id, patientIds));
+    const payers = await db
+      .select()
+      .from(schema.payers)
+      .where(inArray(schema.payers.id, payerIds));
     const linesByClaim = new Map<string, (typeof lines)[number][]>();
     for (const l of lines) {
       const arr = linesByClaim.get(l.claim_id) ?? [];
@@ -328,11 +332,10 @@ export function getRecovery(
   // CommandBar and this page share ONE unfiltered MoneyScope read.
   const f = branchId ? { branchIds: [branchId] } : undefined;
   return withSession(tenantId, async (db) => {
-    const [money, baseline, list] = await Promise.all([
-      branchId ? moneyScope(db, f) : getMoneyScope(tenantId),
-      getLatestBaseline(db),
-      appealPipelineRows(db, 200, branchId),
-    ]);
+    // Sequential — one shared transaction client, see the note in getAnalytics.
+    const money = branchId ? await moneyScope(db, f) : await getMoneyScope(tenantId);
+    const baseline = await getLatestBaseline(db);
+    const list = await appealPipelineRows(db, 200, branchId);
 
     // Win rate + median days over ALL appeals (not the display-limited/recovered-
     // biased rows), so the ROI metrics are honest. The branch filter is applied
@@ -391,12 +394,11 @@ export interface AuditReportBundle {
 /** A3 free-audit leave-behind report: the tenant's own denial exposure. */
 export function getAuditReportData(tenantId: string): Promise<AuditReportBundle> {
   return withSession(tenantId, async (db) => {
-    const [money, byPayer, pareto, recoverabilityRows] = await Promise.all([
-      getMoneyScope(tenantId),
-      denialRateDim(db, "payer"),
-      reasonPareto(db),
-      recoverability(db),
-    ]);
+    // Sequential — one shared transaction client, see the note in getAnalytics.
+    const money = await getMoneyScope(tenantId);
+    const byPayer = await denialRateDim(db, "payer");
+    const pareto = await reasonPareto(db);
+    const recoverabilityRows = await recoverability(db);
     const totalClaims = byPayer.reduce((acc, r) => acc + r.claims, 0);
     const deniedClaims = byPayer.reduce((acc, r) => acc + r.denied, 0);
     const overallRate = totalClaims > 0 ? deniedClaims / totalClaims : 0;
@@ -424,12 +426,11 @@ export interface OwnerReportBundle {
 /** A3 one-tap owner report: what a signed-in owner recovered, on demand. */
 export function getOwnerReportData(tenantId: string): Promise<OwnerReportBundle> {
   return withSession(tenantId, async (db) => {
-    const [byPayer, trendPts, baseline, rows] = await Promise.all([
-      denialRateDim(db, "payer"),
-      trend(db),
-      getLatestBaseline(db),
-      appealPipelineRows(db),
-    ]);
+    // Sequential — one shared transaction client, see the note in getAnalytics.
+    const byPayer = await denialRateDim(db, "payer");
+    const trendPts = await trend(db);
+    const baseline = await getLatestBaseline(db);
+    const rows = await appealPipelineRows(db);
     const totalClaims = byPayer.reduce((acc, r) => acc + r.claims, 0);
     const deniedClaims = byPayer.reduce((acc, r) => acc + r.denied, 0);
     const overallRate = totalClaims > 0 ? deniedClaims / totalClaims : 0;
