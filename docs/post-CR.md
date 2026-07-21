@@ -45,7 +45,7 @@ last blocker on its own.
 - If no reply in ~1-2 weeks, follow up by phone (920033808 / call center 920004299) per the
   same pattern as Email 1.
 
-### A2. Self-enroll in NPHIES Academy (finally unblocked)
+### A2. Self-enroll in NPHIES Academy — 🔴 BLOCKED on a platform bug, not us
 **Unlocks:** the self-serve half of `B1`/`B2`
 - Founder's own login attempt confirmed the Academy itself demands a CR number (not just the
   vendor-certification submission) — see `HUMAN_CONFIRMATION_NEEDED.md` §B intro box,
@@ -55,6 +55,14 @@ last blocker on its own.
   unlocks the *"nphies Registration Guide V1.3"* and *"nphies Readiness & Activation Guide
   V1.2"* PDFs on completion). This likely answers most of B1/B2 directly, faster than waiting
   on A1's email reply.
+- **2026-07-21: registration confirmed broken.** `v-academy.nphies.sa/register/complete`
+  rejects our valid, Active CR (7054836007) with `"CR number الرجاء التأكد من"` — reproduced
+  twice via chrome-devtools MCP, identical error both times, ruling out a one-off glitch.
+  Network inspection shows the POST field is literally named `mediator_code`, not `cr_number` —
+  may expect a different code than the plain MoC CR number, or the registry hasn't propagated
+  yet (CR was issued the day before). Emailed `support@nphies.sa` (cc `onboarding@chi.gov.sa`)
+  same day describing the exact error, CR number, name, phone — waiting on reply. **Do not
+  retry blindly; wait for their answer or ~1 week before re-attempting.**
 
 ### A3. Register as a taxpayer (ZATCA) — time-bound, not optional
 **Unlocks:** nothing blocked on it, but it's a real clock now running
