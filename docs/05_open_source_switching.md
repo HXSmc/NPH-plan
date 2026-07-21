@@ -29,7 +29,7 @@ file, do this FIRST, before touching any code:**
    - **Section J item 6** (CST Cloud Computing Regulatory Framework applicability) — has
      counsel given a definitive answer on whether self-hosting on rented cloud infrastructure
      triggers CST registration?
-   - **Section G4 / §I** — has the CR (Commercial Registration) actually been formed yet?
+   - **Section G4 / §I** — has the CR (Commercial Registration) actually been formed yet? ✅ **DONE 2026-07-21 — CR number obtained.** See `docs/post-CR.md`. This is no longer a gating question for this plan — Oracle/AWS GPU replies and the CST question remain the live blockers.
 2. Classify the current state as exactly one of these three:
    - **(A) STILL WAITING** — no reply yet from Oracle or AWS, or counsel hasn't answered the
      CST question yet. → **Do nothing further.** Report back the current wait status (what's
@@ -131,7 +131,7 @@ This table is a snapshot as of 2026-07-20. **The confirmation doc is the live so
 | `BLK-AI-3` (existing, broadened) | Oracle Riyadh (`me-riyadh-1`) **and/or** AWS Riyadh (`me-central-2`) real GPU service coverage + startup credit pricing | 🔴 open — Email 4 (Oracle) and Email 8 (AWS) both sent 2026-07-19, no reply yet | GPU infra decision — without this, there is nothing to self-host on | Section I item 4; Emails 4/8 |
 | `BLK-OSS-CST` | CST Cloud Computing Regulatory Framework — does self-hosting on rented cloud (not owning a data center) require CST registration as a cloud services provider? | 🔴 open — genuinely ambiguous from CST's own public pages, routed to counsel, not yet answered (no counsel meeting scheduled yet) | Legal green light to self-host at all | Section G4; Section J item 6 |
 | `BLK-OSS-QUALITY` | Model quality eval — is the recommended self-hosted model (see §4) actually good enough for AI-2 (appeal drafting) and AI-4 (EOB vision extraction) vs. Claude? | 🔴 open — no eval run possible until GPU infra exists; the eval harness already exists in-repo (`extractEob.eval.ts`, `scoring.ts`) and can score a self-hosted provider the same way it scores Claude | Production go-ahead (infra alone is not sufficient — a bad model is worse than staying on Claude) | — (new, tracked here) |
-| `BLK-OSS-DATA` | Real labeled data for any fine-tuning pass (as opposed to prompt/decoding-only tuning) needs real, de-identified clinic claims — which needs the CR + DPA to exist first | 🔴 open — blocked on CR formation, same gate as everything else real-PHI (`G5`) | Any fine-tuning quality-improvement work (not the base self-host switch itself) | Section G5; Section I item 9 |
+| `BLK-OSS-DATA` | Real labeled data for any fine-tuning pass (as opposed to prompt/decoding-only tuning) needs real, de-identified clinic claims — which needs the CR + DPA to exist first | 🟡 partial — **CR done 2026-07-21**, DPA still needs counsel sign-off (`C1`/`G5`), same gate as all other real-PHI work | Any fine-tuning quality-improvement work (not the base self-host switch itself) | Section G5; `docs/post-CR.md` |
 | `BLK-AI-1` (existing, applies here too) | KSA privacy counsel sign-off on the overall data-handling posture | 🔴 open — counsel meeting not yet scheduled | Real-PHI operation on ANY provider, self-hosted or not | Section C1; Section J |
 
 **Read `BLK-AI-3`, `BLK-OSS-CST`, and `BLK-AI-1` as the three hard gates on even STARTING §9

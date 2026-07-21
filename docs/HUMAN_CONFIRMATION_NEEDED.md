@@ -159,7 +159,7 @@
   - **Do NOT pick a health-sector activity** (أنشطة صحة الانسان) even though the form will tempt it given the healthcare-adjacent product — this would contradict G1's own finding that Taweed is administrative/billing software with no medical purpose, and could invite unnecessary MOH/SFDA scrutiny that G1 established isn't warranted.
   - **Do NOT pick a 631xxx "data processing / web hosting / cloud computing" activity** (e.g. `631125` — التسجيل لتقديم خدمات الحوسبة السحابية, "registration to *provide* cloud computing services") — Taweed **consumes** cloud infrastructure (Oracle/AWS), it doesn't sell it. That code mischaracterizes the business and risks pulling in CST's Cloud Computing Regulatory Framework licensing as an infrastructure provider, which doesn't apply here.
   - **Open question, routed to counsel (see §J):** CST's own registration criteria say the Cloud Computing Regulatory Framework applies to providers who "directly or effectively control the data center or critical infrastructure" — but CST's public pages also say the framework was "expanded to expressly cover SaaS" without a clear carve-out for a SaaS product built on someone else's cloud. Genuinely ambiguous from public sources alone (confirmed via direct fetch of `cst.gov.sa`'s own registration page — it doesn't spell out the distinction). This does **not** block CR formation (it's a separate CST filing question, unrelated to which ISIC code you register under) — just needs a definitive answer before GA, not resolved here.
-- **What to do:** engage a standard CR formation agent directly (no MISA step, no incubator support-letter needed), select `620111` as the main activity.
+- **What to do:** ~~engage a standard CR formation agent~~ **DONE 2026-07-21 — CR number obtained.** See `docs/post-CR.md` for the full unlock list and what still isn't cleared just because the entity now exists.
 
 ### G5. 🔴⚠️ No pre-entity pilot carve-out — the free-audit GTM pulls the entity requirement earlier than "first invoice"
 - **What's confirmed:** operating commercially in KSA without a CR/license is prohibited (Anti-Commercial Concealment Law — fines to SAR 5M, imprisonment, deportation, entity closure, for the foreign-founder case specifically). The product's own GTM wedge (`01_market_and_gtm.md` §7-8) is a **free audit on the clinic's own real NPHIES `ClaimResponse` data** — that's real PHI, which triggers PDPL + a DPA (C1/BLK-AI-1), and **a DPA needs a legal entity to be a party to it.** So the practical "you need an entity" moment arrives at **first real-clinic-data**, before the first invoice, not at "first commercial contract" as the GTM plan implicitly assumes.
@@ -753,11 +753,13 @@ Ali Almuhaysh
 | 6 | ~~Branch counts / insured-mix (E1), confirm "Nabda" (E2)~~ **DONE 2026-07-19 — see E1/E2**; only a handful of calls remain for the still-unconfirmed rows | Manual research/calls, nothing vendor-facing |
 | 7 | KSA privacy counsel — scoping call/referral only (C1, G12-G14) | Consultation ≠ filing; filing needs the entity, the conversation doesn't |
 | 8 | ~~Read NPHIES portal ToU yourself~~ **DONE 2026-07-19 — full text pulled directly from the live page, see G8** (G8) | Reading a public page, no acceptance/account action |
-| 9 | **Start CR formation now** (G4 — standard CR, no MISA, founder confirmed Saudi) | This is the actual bottleneck — everything above just fills the wait, this is what ends it |
+| 9 | ~~Start CR formation now~~ **DONE 2026-07-21 — CR number obtained.** See `docs/post-CR.md` | This was the actual bottleneck — see post-CR.md for what's unlocked and what still isn't |
 
 **Confirmed CR-blocked (not worth re-attempting until CR exists):** NPHIES Academy enrollment, B1/B2 PKI+conformance submission, G5 real-PHI ingestion, G8/G9 signing any vendor agreement, G12-G14 filing (SDAIA registration, DPO, DPA/SCC).
 
 **✅ Status check 2026-07-20 (verified against actual Gmail sent folder):** every row above is sent/done except **#7 (counsel meeting — not yet scheduled)** and **#9 (CR formation — not yet started)** — both are real-world actions only you can take, nothing left for email/research to unblock either one.
+
+**✅ Update 2026-07-21 — #9 is DONE, CR number obtained.** See `docs/post-CR.md` for the full post-CR action list — what this actually unlocks (NPHIES onboarding reply, Academy enrollment, ZATCA registration) and what's still gated on #7 (counsel) regardless. #7 remains the last open item here.
 
 > **Send order:** 1b (Academy, self-serve, today) → Emails 1 + 2 same day (gov replies are slow; start the clock) → Email 3 (Waseel) → Email 4 (Oracle) → Email 7 via referral/WhatsApp as soon as one warm intro exists → Email 5 anytime before Phase-2 build → Email 6 after a counsel referral.
 
