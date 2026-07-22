@@ -77,9 +77,17 @@ last blocker on its own.
   fix/explanation) — replied in-thread pushing back, asking them not to close before answering.
   Then got a **phone callback**: ticket was looped to `onboarding@chi.gov.sa` since they own the
   Academy site — real answer expected tomorrow (2026-07-22).
-- An automated retry (chrome-devtools MCP re-submit + Gmail MCP OTP fetch) is still scheduled
-  for 2026-07-22 ~12:00 Riyadh regardless, to test the registry-propagation-lag theory
-  independently of their reply. **Do not hand-retry before then or before their reply lands.**
+- **2026-07-22 ~12:04 Riyadh: 3rd identical failure, registry-lag theory now disproven.** Scheduled
+  retry ran (>24h after CR issuance) — same exact response, byte-for-byte:
+  `{"status":false,"msg":"CR number الرجاء التأكد من "}`. Checked the `support@nphies.sa` thread
+  first — still no real explanation, just the same boilerplate close. This rules out "the
+  registry just hadn't synced yet" as the cause; it's either the `mediator_code` field expecting
+  something other than the plain MoC CR number, or a genuine unfixed platform bug.
+  **Do not retry again unattended.** Genuinely stuck pending an actual answer from
+  `onboarding@chi.gov.sa` (they were the ones who confirmed the physical-office requirement on
+  this same thread family — worth asking them directly about `mediator_code` too, since
+  `support@nphies.sa` has produced nothing but auto-closes across 3 attempts now) or a follow-up
+  call to 19977/920033808.
 
 ### A3. ~~Register as a taxpayer (ZATCA)~~ ✅ DONE — 2026-07-22
 **Unlocks:** nothing blocked on it, but it's a real clock now running
