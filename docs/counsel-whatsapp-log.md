@@ -7,13 +7,26 @@ every drafted reply or prepared document below is waiting on founder review/edit
 Counsel WhatsApp chat: JID `71511339728956@lid`, phone `966550131601` (name not resolved by the
 WhatsApp client cache).
 
-**⚠️ Bug found 2026-07-22 (separate from the audio-caching bug already fixed that day):** the
-WhatsApp MCP's `list_messages`/`get_status` under the `@lid` JID form silently miss messages that
-land under the resolved `966550131601@s.whatsapp.net` form — the two JIDs are meant to normalize
-to the same chat, but new messages after 2026-07-22 03:13 only showed up when querying with the
-`@s.whatsapp.net` form directly. Caused ~13 hours of "nothing new" false negatives (including 2
-missed voice notes) before this was caught. Use the phone-number JID form for this chat going
-forward until the bridge itself is fixed. Not yet fixed in `/Users/alimc/Desktop/personal/mcp-whatsapp` — flagging here, not fixed this session.
+**✅ Bug found AND permanently fixed 2026-07-22** (separate from the audio-caching bug fixed
+earlier that day): root cause was that a DM's `chat_jid` fragments across two values over its
+lifetime — early messages store under the raw `@lid` form because `ResolveLIDToJID` has no
+mapping yet, and once WhatsApp later teaches the client that LID's real phone number, all *new*
+live messages silently start storing under the resolved `@s.whatsapp.net` form instead. Every
+chat_jid-scoped read (`list_messages`, `get_status`, `get_chat`, ...) does an exact-string match,
+so querying with either JID alone only ever saw half the conversation — this chat specifically
+had 15 messages stuck under `71511339728956@lid` and 31 under `966550131601@s.whatsapp.net`.
+**Permanent fix** in `/Users/alimc/Desktop/personal/mcp-whatsapp`: added `Store.MergeChatJID` —
+whenever `normalizeIncomingMessage`'s resolved chat JID differs from the raw one, migrate any
+existing rows under the old JID onto the new one and drop the orphaned chat row (collision-safe:
+if a message id already exists under both, the old-side duplicate is dropped instead of erroring
+out — this happened live, since an earlier history-sync backfill had already re-stored some
+messages under the resolved JID before the fix ran). Hooked into both `handleMessage` and
+`handleHistorySync`. Two new regression tests, full suite green, daemon rebuilt/restarted, and the
+existing split for THIS chat was manually reconciled via the same logic — verified via
+`list_messages`: the `@lid` form now correctly returns nothing (no rows reference it anymore,
+canonical JID is `966550131601@s.whatsapp.net`), phone-JID form returns the full unified 31-message
+history with zero data loss. **Use `966550131601@s.whatsapp.net` for this chat going forward** —
+the `@lid` alias is now genuinely retired, not just broken.
 
 ---
 
@@ -64,7 +77,7 @@ different sizes 254.2KB/188.3KB) — not a repeat of the earlier caching bug.
    (not something counsel or we can answer alone), agrees to schedule the clinic-DPA meeting
    virtually, and confirms the Arabic SCC document is on its way.
 
-**Draft WhatsApp reply text (Arabic):**
+**Draft WhatsApp reply, v1 (formal MSA — superseded, kept for reference):**
 > وعليكم السلام ورحمة الله وبركاته، وصلتني الملاحظتين الصوتيتين وشكرًا على التفصيل.
 >
 > بخصوص سؤالك عن تعريف "المستخدم" في بند إخلاء المسؤولية بشروط نفيس - هذا سؤال يحتاج جواب من نفيس نفسها مو منا، بنراسلهم مباشرة نطلب توضيح إذا "المستخدم" يقصد به منصة تعويض أو العيادة أو المنشأة الطبية.
@@ -76,6 +89,30 @@ different sizes 254.2KB/188.3KB) — not a repeat of the earlier caching bug.
 > بخصوص ملف سدايا بالعربي - لقيت النسخة العربية الرسمية وجاية معاك.
 >
 > شاكرين وقتك.
+
+**Draft WhatsApp reply, v2 (rewritten in founder's own voice, 2026-07-22 17:10)** — after reading
+the founder's full message history in this chat (going back to 2026-07-20), rewrote to match his
+actual register: casual Najdi/Gulf spoken Arabic, not MSA — short lines, "يا عم", "حقت" as the
+possessive marker, "وش"/"بس"/"عشان"/"خلاص", no formal closings. This is the version awaiting
+founder approval before sending, not v1:
+> وعليكم السلام يا عم
+>
+> وصلتني تسجيلاتك الصوتية، مشكور عالتفصيل
+>
+> بالنسبة لسؤال "المستخدم" حقت بند نفيس - هذا سؤال لازم يرد عليه نفيس نفسها مو احنا، بنراسلهم نسألهم يقصدون منصة تعويض ولا العيادة
+>
+> نفس الشي بخصوص اتفاقية استخدام علامتهم التجارية - بنسألهم فيها مباشرة وأطلعك عالرد أول ما يوصلني
+>
+> اجتماع اتفاقية العيادات - تمام خلنا نحدد وقت، وعن بعد ما فيها مشكلة
+>
+> وملف سدايا اللي تبيه بالعربي - حصلت النسخة العربية الرسمية وجايتك الحين
+>
+> مشكور عالوقت
+
+**Arabic SCC PDF also staged** at
+`/Users/alimc/Desktop/personal/mcp-whatsapp/store/uploads/SCC-عربي-تعويض.pdf` (the WhatsApp
+bridge's designated outbound-attachment folder) — ready to attach whenever the founder sends the
+reply above, no extra copying needed.
 
 **Not addressed / left for founder:** counsel didn't answer the 14:26 home-address question
 directly in these two notes — worth asking again if it's still open by the time of the meeting.
