@@ -588,13 +588,21 @@ Ali Almuhaysh
 
 ### Email 7b — Almosa (Al Moosa Specialist Hospital) — customer-validation, 2026-07-23
 **✅ Drafts created in TWO places**, not sent: (1) `r-5939221424015273546` in the founder's
-personal Gmail, and (2) directly in the new company inbox `taweed.ksa@gmail.com` (created
-2026-07-23, credentials in the Secrets vault) via browser — the Gmail MCP connector is tied to the
-personal account only, so the company-inbox copies were written straight into Gmail's compose UI.
+personal Gmail (still signed Ali Almuhaysh / +966566201233 — not updated, see signature note
+below), and (2) directly in the new company inbox `taweed.ksa@gmail.com` (created 2026-07-23,
+credentials in the Secrets vault) via browser — the Gmail MCP connector is tied to the personal
+account only, so the company-inbox copies were written straight into Gmail's compose UI.
 The 6 real clinic drafts from §Email 7 (My Clinic, Saba Medical, Stars Smile, AlShakreen, Roaya
 Eye Center, Ryan Clinics) were also rewritten to this validation-meeting framing and saved as
 drafts in `taweed.ksa@gmail.com` the same way — all 7 sit in that inbox's Drafts folder, review
 and send from there whenever ready.
+
+**Signature updated 2026-07-23 — all 7 `taweed.ksa@gmail.com` drafts only:** founder requested the
+sender name/phone in these drafts be changed to Abdullah Alsaadoun / عبدالله السعدون,
++966548159985 (was Ali Almuhaysh / علي المحيش, +966566201233). Applied to all 7 drafts in the
+company inbox. **Not applied** to the personal-Gmail Almosa draft (`r-5939221424015273546`) — that
+one still has the original signature; flag if it should be updated too or discarded in favor of
+the company-inbox copy.
 **To:** `abrar.alessa@almoosahealth.com.sa` — Almoosa exec contact, provided directly by founder.
 **⚠️ Scope note:** Almosa is a hospital, above this project's usual mid-market-clinic ICP ceiling
 (§6 explicitly excludes hospital groups from the 36-account list) — added here as a possible
