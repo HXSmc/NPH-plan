@@ -93,6 +93,23 @@ last blocker on its own.
   this same thread family — worth asking them directly about `mediator_code` too, since
   `support@nphies.sa` has produced nothing but auto-closes across 3 attempts now) or a follow-up
   call to 19977/920033808.
+- **2026-07-23, founder-directed retry with a real technical lead — still fails, lead disproven.**
+  Inspected the actual POST payload via chrome-devtools network panel: the form silently submits
+  a `national_id` field that has **no visible input control anywhere on the page** — it exists in
+  the DOM (`type="number"`, hidden) but nothing lets a user fill it, so it's always sent empty.
+  Looked like a strong candidate for the real bug. **Tested by injecting the founder's actual
+  national ID into that field via the browser console and resubmitting — 4th attempt, byte-for-
+  byte identical failure**, `{"status":false,"msg":"CR number الرجاء التأكد من "}`, national_id
+  correctly present in the request this time. **This disproves the hidden-national_id theory** —
+  the rejection is happening entirely server-side against `mediator_code` itself, unrelated to
+  any client-side field we can influence. Confirms this is NPHIES's own platform bug, not
+  something fixable from our end. The `mediator_code` field name itself is the strongest lead
+  left unexplored — worth asking `onboarding@chi.gov.sa` directly whether this endpoint expects
+  an actual NPHIES-issued mediator/vendor code (obtained through some other registration step we
+  haven't done yet) rather than the plain MoC CR number, since a *direct-integration* vendor like
+  Taweed may not fit whatever "mediator" concept this field was built around. **Do not retry
+  again** without a real answer from NPHIES on what `mediator_code` is actually supposed to
+  contain — this is now the 4th confirmed identical failure, more attempts add no new signal.
 
 ### A3. ~~Register as a taxpayer (ZATCA)~~ ✅ DONE — 2026-07-22
 **Unlocks:** nothing blocked on it, but it's a real clock now running
