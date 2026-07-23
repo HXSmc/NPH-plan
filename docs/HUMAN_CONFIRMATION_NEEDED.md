@@ -613,13 +613,19 @@ unfamiliar corporate contacts uses "Hello Dr. X" + "We", distinct from the casua
 voice. **These edits are NOT yet reflected in the 7 `taweed.ksa@gmail.com` drafts** — apply them
 there too once that inbox is reachable again.
 
-**🔴 Blocked, 2026-07-23: `taweed.ksa@gmail.com` browser session got signed out mid-task**
-(requested: remove em dashes + other AI-slop phrasing from all 7 company-inbox drafts, and change
-the Arabic greeting from "مرحبًا د. [اسم الطبيب]" to "مرحبا فريق [اسم العيادة/المستشفى]"). Google
-now blocks the automated browser from signing back in ("This browser or app may not be secure") —
-tried twice (same tab retry, new tab) with no change. **Needs founder to sign in manually** in a
-real browser first (password in Secrets vault) before automation can resume there. None of these
-7 drafts have been de-slopped or had the greeting changed yet.
+**✅ RESOLVED 2026-07-23 — switched to `contact.taweed@gmail.com` via the new multi-gmail MCP.**
+`taweed.ksa@gmail.com` stayed locked out of automated browser sign-in (Google's own bot-check,
+not a bug in this project — real Gmail API access sidesteps it entirely). Founder connected
+`contact.taweed@gmail.com` through `gx-55/multi-gmail-mcp` (real Gmail API, no browser needed —
+see Secrets vault "Gmail MCP" section). **All 7 drafts recreated there** with every requested
+edit applied: em dashes removed, other AI-slop phrasing trimmed, Arabic greeting switched from
+"مرحبًا د. [اسم الطبيب]" to "مرحبا فريق [اسم العيادة]" (per-clinic real name), and Almosa's draft
+carries the founder's own edit (Hello Dr. Abrar, / "We" voice) plus the Abdullah Alsaadoun
+signature. **`contact.taweed@gmail.com` is now the working outreach inbox** — `taweed.ksa@gmail.com`
+and its 7 old drafts are stale, left as-is, not deleted. Draft IDs: My Clinic
+`r-8069172292547058558`, Saba Medical `r9056592108510621999`, Stars Smile `r-2650023372984296018`,
+AlShakreen `r5029319462977092505`, Roaya Eye Center `r8806056778660780148`, Ryan Clinics
+`r-8885949771378380616`, Almosa `r-917208773868999506`.
 **To:** `abrar.alessa@almoosahealth.com.sa` — Almoosa exec contact, provided directly by founder.
 **⚠️ Scope note:** Almosa is a hospital, above this project's usual mid-market-clinic ICP ceiling
 (§6 explicitly excludes hospital groups from the 36-account list) — added here as a possible
