@@ -21,9 +21,9 @@
     "eslint": "^9.17.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "prettier": "^3.9.5",
+    "prettier": "^3.9.6",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.64.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^3.2.7"
   }
 }
